@@ -1,0 +1,48 @@
+# Build folders
+build/
+res/
+data/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+
+# Compiled object files
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.pdb
+*.exe
+
+# CUDA NVCC intermediate files
+*.cubin
+*.fatbin
+*.ptx
+
+# Logs
+*.log
+
+# VS Code
+.vscode/
+.idea/
+
+# Python bindings (if any)
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated files
+*.bin
+*.cache
+*.tmp
