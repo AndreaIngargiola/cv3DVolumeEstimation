@@ -9,6 +9,7 @@ add_executable(runTests
 target_link_libraries(runTests
     PRIVATE
     customMath_module
+    vision_module
     GTest::GTest
     GTest::Main
 )

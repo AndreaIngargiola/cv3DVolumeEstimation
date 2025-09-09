@@ -11,6 +11,7 @@ find_package(CUDA REQUIRED)
 
 # Add submodules
 add_subdirectory(modules/customMath)
+add_subdirectory(modules/vision)
 add_subdirectory(tests)
 
 add_executable(my_app
@@ -23,6 +24,7 @@ target_link_libraries(my_app
     cuda
     cudart
     customMath_module
+    vision_module
 )
 
 target_include_directories(my_app PRIVATE
@@ -30,6 +32,7 @@ target_include_directories(my_app PRIVATE
     ${CUDA_INCLUDE_DIRS}
     ${CMAKE_SOURCE_DIR}/include
     customMath_module
+    vision_module
 )
 
 set_target_properties(my_app PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
