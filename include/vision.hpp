@@ -3,30 +3,28 @@
 #include <string>
 #include <opencv2/core.hpp>
 
-using namespace cv;
-using namespace std;
-
 class Calibrator {
 private:
    
-    const string valuesPath;
-    const string samplesPath;
-    const Vec2i patternShape;
+    const std::string valuesPath;
+    const std::string samplesPath;
+    const cv::Size patternShape;
+    const int patternType;
 
-    Matx33f K, R;
-    Matx31f t;
+    cv::Matx33f K;
+    cv::Mat distCoeffs;
     float reprojectionError;
 
 
 public:
 
-    Calibrator(const string& values,
-               const string& samples,
-               const Vec2i& pattern);
+    Calibrator( const std::string& valuesPath,
+                const std::string& samplesPath,
+                const cv::Size& patternShape,
+                const int patternType);
     
-    Matx33f getK();
-    Matx33f getR();
-    Matx31f gett();
+    cv::Matx33f getK();
+    cv::Mat getDistCoeffs();
     float getReprojectionError();
 
 private:
