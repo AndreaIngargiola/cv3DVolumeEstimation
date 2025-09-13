@@ -14,7 +14,7 @@ TEST(CustomMathTest, InvertAxis) {
 }
 
 TEST(VisionTest, Calibration){
-    Calibrator c("data/", "../../data/calibration", cv::Size(9,6), 1);
+    Calibrator c("../../data/calibration/values.yml", "../../data/calibration", cv::Size(9,6), 1);
     // Print results
     std::cout << "RMS error = " << c.getReprojectionError() << std::endl;
     std::cout << "Camera matrix K =\n" << c.getK() << std::endl;

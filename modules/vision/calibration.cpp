@@ -18,10 +18,16 @@ Calibrator::Calibrator(const string& valuesPath,
             patternShape(patternShape),
             patternType(patternType)
 {
-    this->calibrate();
+    if (fs::exists(this->valuesPath) && fs::is_regular_file(this->valuesPath)) {
+        this->loadCalibration();
+    } else {
+        this->calibrate();
+        this->saveCalibration();
+    }
+    
 }
 
-Matx33f Calibrator::getK() {
+Mat Calibrator::getK() {
     return this->K;
 }
 
@@ -49,7 +55,7 @@ void Calibrator::calibrate() {
     }
 
     // Process all images in folder
-    for (const auto& entry : fs::directory_iterator(samplesPath)) {
+    for (const auto& entry : fs::directory_iterator(this->samplesPath)) {
         if (entry.is_regular_file()) {
             Mat img = imread(entry.path().string());
             if (img.empty()) continue;
@@ -71,11 +77,60 @@ void Calibrator::calibrate() {
         }
     }
 
-    Size imgSize = imread(fs::directory_iterator(samplesPath)->path().string()).size();
+    Size imgSize = imread(fs::directory_iterator(this->samplesPath)->path().string()).size();
 
-    calibrateCamera(objPoints, imgPoints, imgSize, K, distCoeffs, rvecs, tvecs);
+    calibrateCamera(objPoints, imgPoints, imgSize, this->K, this->distCoeffs, rvecs, tvecs);
 }
 
-void Calibrator::retrieveValues() {
+void Calibrator::saveCalibration() 
+{
+    // Open file for writing
+    FileStorage fs(this->valuesPath, FileStorage::WRITE);
 
+    if (!fs.isOpened()) {
+        std::cerr << "Error: Cannot open file " << this->valuesPath << " for writing." << std::endl;
+        return;
+    }
+
+    // Save data
+    fs << "K" << this->K;
+    fs << "distCoeffs" << this->distCoeffs;
+
+    fs.release();
+    std::cout << "Calibration saved to " << this->valuesPath << std::endl;
+}
+
+void Calibrator::loadCalibration() {
+    FileStorage fs(this->valuesPath, FileStorage::READ);
+
+    if (!fs.isOpened()) {
+        std::cerr << "Error: Cannot open file " << this->valuesPath << " for reading." << std::endl;
+        return;
+    }
+
+    //If yml fields exists, load them, or else calibrate and save 
+    if (!fs["K"].empty() && !fs["distCoeffs"].empty()) {
+
+        // Load raw data
+        fs["K"] >> this->K;
+        fs["distCoeffs"] >> this->distCoeffs;
+
+        fs.release();
+
+        // Ensure double precision (CV_64F)
+        if (this->K.type() != CV_64F) {
+            K.convertTo(K, CV_64F);
+        }
+        if (distCoeffs.type() != CV_64F) {
+            distCoeffs.convertTo(distCoeffs, CV_64F);
+        }
+
+        std::cout << "Calibration loaded from " << this->valuesPath << std::endl;
+        std::cout << "K = " << K << std::endl;
+        std::cout << "distCoeffs = " << distCoeffs << std::endl;
+    } else {
+        fs.release();
+        this->calibrate();
+        this->saveCalibration();
+    }
 }

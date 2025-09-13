@@ -11,7 +11,7 @@ private:
     const cv::Size patternShape;
     const int patternType;
 
-    cv::Matx33f K;
+    cv::Mat K;
     cv::Mat distCoeffs;
     float reprojectionError;
 
@@ -23,11 +23,12 @@ public:
                 const cv::Size& patternShape,
                 const int patternType);
     
-    cv::Matx33f getK();
+    cv::Mat getK();
     cv::Mat getDistCoeffs();
     float getReprojectionError();
 
 private:
-    void retrieveValues();
     void calibrate();
+    void saveCalibration();
+    void loadCalibration();
 };
