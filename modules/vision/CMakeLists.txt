@@ -1,5 +1,6 @@
 add_library(vision_module 
     calibration.cpp
+    homography.cpp
 )
 
 target_include_directories(vision_module PUBLIC

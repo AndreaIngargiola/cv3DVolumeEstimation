@@ -20,5 +20,3 @@ TEST(VisionTest, Calibration){
     std::cout << "Camera matrix K =\n" << c.getK() << std::endl;
     std::cout << "Distortion coefficients =\n" << c.getDistCoeffs() << std::endl;
 }
-
-
