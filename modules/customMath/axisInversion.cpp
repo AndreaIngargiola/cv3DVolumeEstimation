@@ -14,18 +14,18 @@ namespace customMath {
         return Vec2f(img_w - p[0], img_h - p[1]);
     }
 
-    void invert3dAxis(Matx33f& K, Matx33f& R, int img_w, int img_h) {
+    void invert3dAxis(Mat& K, Mat& R, float img_w, float img_h) {
         
         //Transform matrix to flip axes
-        Matx33f T(
-            -1.0f,  0.0f,  img_w,  // x' = -x + w  (origin on right)
-            0.0f,   -1.0f, img_h,  // y' = -y + h  (origin on bottom)
-            0.0f,   0.0f,  1.0f
+        Mat T = (Mat_<double>(3,3) <<
+                -1.0f,  0.0f,  img_w,  // x' = -x + w  (origin on right)
+                0.0f,   -1.0f, img_h,  // y' = -y + h  (origin on bottom)
+                0.0f,   0.0f,  1.0f
         );
         
         K = T * K;
 
-        Matx33f D(
+        Mat D = (Mat_<double>(3,3) <<
             1.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f,
             0.0f, 0.0f, -1.0f
