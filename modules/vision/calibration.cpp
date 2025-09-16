@@ -39,6 +39,44 @@ float Calibrator::getReprojectionError() {
     return this->reprojectionError;
 }
 
+Size Calibrator::getPatternShape() {
+    return this->patternShape;
+}
+
+void Calibrator::findPatternFromImg(const std::string& imgPath, 
+                                    std::vector<std::vector<Point2f>>& cornersAccumulator, 
+                                    std::vector<std::vector<Point3f>>& objpAccumulator) 
+{
+    Mat img = imread(imgPath);
+    if (img.empty()) {
+        throw std::invalid_argument("Image not found at path " + imgPath);
+    }
+
+    // Prepare one set of object points
+    std::vector<Point3f> objp;
+    for (int i = 0; i < patternShape.height; i++) {
+        for (int j = 0; j < patternShape.width; j++) {
+            objp.emplace_back(j, i, 0.0f);
+        }
+    }
+
+    std::vector<Point2f> corners;
+    bool found = findChessboardCorners(img, patternShape, corners);
+
+    if (found) {
+        Mat gray;
+        cvtColor(img, gray, COLOR_BGR2GRAY);
+        cornerSubPix(
+            gray, corners, Size(11, 11), Size(-1, -1),
+            TermCriteria(TermCriteria::EPS + TermCriteria::MAX_ITER, 30, 0.001)
+        );
+
+        cornersAccumulator.push_back(corners);
+        objpAccumulator.push_back(objp);
+    }
+
+}
+
 void Calibrator::calibrate() {
     
     std::vector<Mat> rvecs; 
@@ -57,23 +95,7 @@ void Calibrator::calibrate() {
     // Process all images in folder
     for (const auto& entry : fs::directory_iterator(this->samplesPath)) {
         if (entry.is_regular_file()) {
-            Mat img = imread(entry.path().string());
-            if (img.empty()) continue;
-
-            std::vector<Point2f> corners;
-            bool found = findChessboardCorners(img, patternShape, corners);
-
-            if (found) {
-                Mat gray;
-                cvtColor(img, gray, COLOR_BGR2GRAY);
-                cornerSubPix(
-                    gray, corners, Size(11, 11), Size(-1, -1),
-                    TermCriteria(TermCriteria::EPS + TermCriteria::MAX_ITER, 30, 0.001)
-                );
-
-                imgPoints.push_back(corners);
-                objPoints.push_back(objp);
-            }
+            this->findPatternFromImg(entry.path().string(), imgPoints, objPoints);
         }
     }
 

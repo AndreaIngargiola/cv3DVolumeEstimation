@@ -1,6 +1,7 @@
 add_library(customMath_module 
     homogeneousConversion.cpp
     axisInversion.cpp
+    projection.cpp
 )
 
 target_include_directories(customMath_module PUBLIC
