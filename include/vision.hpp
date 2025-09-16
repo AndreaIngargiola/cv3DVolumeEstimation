@@ -25,6 +25,10 @@ public:
     cv::Mat getK();
     cv::Mat getDistCoeffs();
     float getReprojectionError();
+    cv::Size getPatternShape();
+    void findPatternFromImg( const std::string& imgPath, 
+                            std::vector<std::vector<cv::Point2f>>& cornersAccumulator, 
+                            std::vector<std::vector<cv::Point3f>>& objpAccumulator);
 
 private:
     void calibrate();
@@ -37,29 +41,26 @@ class Homographer {
 private:
     cv::Mat P;          //projection matrix P = K @ Rt
     cv::Mat K;          //intrinsics matrix
-    cv::Mat distCoeffs;
     cv::Mat R;          //rotation matrix
     cv::Mat t;          //translation vector
     cv::Vec3d v;        //vanishing line for Z axis
     cv::Vec3d l;        //vanishing line for X and Y axis
     cv::Vec3i b;        //homogeneous pixel coordinates of the point laying on Z = 0
     const int zSizeInCm;
-    const cv::Size& patternShape;
     std::unordered_map<int, cv::Mat> homographies;
 
 public:
-    Homographer(cv::Mat K,
-                cv::Mat distCoeffs,
+    Homographer(Calibrator cal,
                 const int zSizeInCm,
-                const cv::Size& patternShape,
                 const std::string& poseImgPath);
 
-    void strikeThePose(const std::string& poseImgPath);
+    void strikeThePose(const std::string& poseImgPath, Calibrator cal);
     void computeHomographies(const int delta, const int maxHeightInCm);
 
     cv::Mat getGoundPlane();
     std::unordered_map<int, cv::Mat> getHomographies();
     cv::Mat getPlane(const int z);
+    cv::Mat getP();
 
 private:
     cv::Vec3i getTforPlaneZ(const int z);
