@@ -78,3 +78,42 @@ TEST(VisionTest, Homography) {
 
     imwrite("testHomOutput.png", img);
 }
+
+TEST(VisionTest, ParallelPlanes) {
+    using namespace cv;
+    using namespace std;
+
+    Point3f origin = {0,0,0};
+    float size = 4.0f;
+    string posePath = "../../data/floor_surface/piano_pav_(1).jpg";
+    Mat img = imread(posePath);
+
+    vector<Point2i> toDraw;
+
+    // Define Calibrator and Homographer (tests subjects)
+    Calibrator c("../../data/calibration/values.yml", "../../data/calibration", cv::Size(9,6), 1);
+    Homographer hom(c, 2, posePath);
+    Mat P = hom.getP();
+
+    //defiine control group points
+    vector<Point3d> withP = {Point3d(1,0,0), Point3d(1,0,10), Point3d(1,0,20), Point3d(1,0,30)};
+    for (const Point3d controlPoint : withP) {
+        Point2d p = customMath::projectOnImgFrom3D(controlPoint, P);
+        toDraw.push_back(Point2i(round(img.size().width - p.x), round(img.size().height - p.y)));
+    }
+
+    //compute test group homographies and their respective origin on the image
+    int numberOfPlanes = hom.computeHomographies(10, 60);
+    
+    for (const auto& entry : hom.getHomographies()) {
+        Point2d p = customMath::projectOnImgFromPlane(origin, entry.second);
+        toDraw.push_back(Point2i(round(img.size().width - p.x), round(img.size().height - p.y)));
+    }
+
+    for (int i=0; i < 8; i++) {
+        if(i < 4) circle(img, toDraw[i], 2, Scalar(0,0,255), 2); // red
+        else circle(img, toDraw[i], 2, Scalar(0,0,0), 2);        // black
+    }
+    
+    imwrite("testPP.png", img);
+}

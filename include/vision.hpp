@@ -45,7 +45,7 @@ private:
     cv::Mat t;          //translation vector
     cv::Vec3d v;        //vanishing line for Z axis
     cv::Vec3d l;        //vanishing line for X and Y axis
-    cv::Vec3i b;        //homogeneous pixel coordinates of the point laying on Z = 0
+    cv::Vec3d base;     //homogeneous pixel coordinates of the point laying on Z = 0
     const int zSizeInCm;
     std::unordered_map<int, cv::Mat> homographies;
 
@@ -55,7 +55,7 @@ public:
                 const std::string& poseImgPath);
 
     void strikeThePose(const std::string& poseImgPath, Calibrator cal);
-    void computeHomographies(const int delta, const int maxHeightInCm);
+    int computeHomographies(const int deltaZ, const int maxHeightInCm);
 
     cv::Mat getGoundPlane();
     std::unordered_map<int, cv::Mat> getHomographies();
@@ -63,6 +63,5 @@ public:
     cv::Mat getP();
 
 private:
-    cv::Vec3i getTforPlaneZ(const int z);
-    void computeHomographyForPlaneZ(const int z);
+    void computeHomographyForPlaneZ(const double z, cv::Vec3d top);
 };
