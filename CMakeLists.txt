@@ -3,6 +3,7 @@ project(cv3DVolumeEstimation LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS} include)
@@ -12,6 +13,7 @@ find_package(CUDA REQUIRED)
 # Add submodules
 add_subdirectory(modules/customMath)
 add_subdirectory(modules/vision)
+add_subdirectory(modules/segmentation)
 add_subdirectory(tests)
 
 add_executable(my_app
@@ -25,6 +27,7 @@ target_link_libraries(my_app
     cudart
     customMath_module
     vision_module
+    segmentation_module
 )
 
 target_include_directories(my_app PRIVATE
@@ -33,6 +36,7 @@ target_include_directories(my_app PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     customMath_module
     vision_module
+    segmentation_module
 )
 
 set_target_properties(my_app PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

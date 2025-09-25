@@ -1,0 +1,71 @@
+#include <segmentation.hpp>
+
+using namespace cv;
+using namespace cv::cuda;
+
+KPExtractor::KPExtractor(const int frameSetSize) : frameSetSize(frameSetSize) {}
+
+GpuMat* KPExtractor::getUnclusteredKeypoints(cv::Mat& frame) {
+    this->frame = frame;
+    this->preprocessFrameAndBackSub();  // conversion to greyscale and update of background subtractor
+
+    if(this->frameCounter < this->frameSetSize) {
+        this->trackKeypoints();
+        this->frameCounter++;
+    }
+    else {
+        this->findNewKeypoints();
+        this->frameCounter = 0;
+    }
+
+    return &this->d_keypoints;
+}
+
+void KPExtractor::preprocessFrameAndBackSub() {
+    GpuMat d_blurred;
+    Mat blurred;
+
+    // CPU conversion to gray and blurring version of frame to compute the mask
+    cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
+    d_frame.upload(frame);
+
+    cv::GaussianBlur(frame, blurred, cv::Size(5,5), 0);
+    d_blurred.upload(blurred);
+
+    // Creation of updated mask for background subtraction
+    pBackSub->apply(d_blurred, d_mask);
+}
+
+void KPExtractor::findNewKeypoints() {
+    Mat mask;
+    d_mask.download(mask);
+
+    // CPU morphological filtering
+    cv::morphologyEx(mask, mask, cv::MORPH_OPEN,
+                    cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3,3)));
+
+    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE,
+                    cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7,7)));
+
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE,
+                cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7,7)));
+
+    //cv::threshold(maskClean, maskClean, 200, 255, cv::THRESH_BINARY);
+
+    // Upload back to GPU for masking
+    d_mask.upload(mask);
+
+    // Remove shadows (keep only 0/255)
+    cv::cuda::threshold(d_mask, d_mask, 200, 255, cv::THRESH_BINARY);
+
+    // Apply mask to grayscale frame
+    cv::cuda::bitwise_and(d_frame, d_mask, d_frame);
+
+    // Detect corners on GPU
+    kpDetector->detect(d_frame, this->d_keypoints);
+}
+
+void KPExtractor::trackKeypoints()
+{
+    
+}
