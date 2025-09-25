@@ -5,6 +5,7 @@
 #include <opencv2/cudabgsegm.hpp>
 #include <opencv2/cudaarithm.hpp>
 #include <opencv2/core.hpp>
+#include <opencv2/cudaoptflow.hpp>
 
 
 class KPExtractor {
@@ -12,8 +13,10 @@ class KPExtractor {
     const int frameSetSize;
     int frameCounter = 0;
     cv::cuda::GpuMat d_keypoints;
+    cv::cuda::GpuMat d_prevKeypoints;
     cv::Mat frame; 
     cv::cuda::GpuMat d_frame;
+    cv::cuda::GpuMat d_prevFrame;
     cv::cuda::GpuMat d_mask;
 
     // CUDA background subtractor (MOG2)
@@ -32,9 +35,12 @@ class KPExtractor {
             0.04       // k
         );
 
+    cv::Ptr<cv::cuda::SparsePyrLKOpticalFlow> lucasKanadeOpticalFlow = 
+        cv::cuda::SparsePyrLKOpticalFlow::create();
+
     public:
-    KPExtractor(const int frameSetSize);
-    cv::cuda::GpuMat* getUnclusteredKeypoints(cv::Mat& frame);
+    KPExtractor(const int frameSetSize, cv::cuda::GpuMat& d_mask);
+    cv::cuda::GpuMat getUnclusteredKeypoints(cv::Mat& frame);
 
     private:
     void preprocessFrameAndBackSub();

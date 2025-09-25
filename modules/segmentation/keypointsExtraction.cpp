@@ -3,27 +3,33 @@
 using namespace cv;
 using namespace cv::cuda;
 
-KPExtractor::KPExtractor(const int frameSetSize) : frameSetSize(frameSetSize) {}
+KPExtractor::KPExtractor(const int frameSetSize, GpuMat& d_mask) : frameSetSize(frameSetSize) {
+    this->d_mask = d_mask;
+}
 
-GpuMat* KPExtractor::getUnclusteredKeypoints(cv::Mat& frame) {
+GpuMat KPExtractor::getUnclusteredKeypoints(cv::Mat& frame) {
     this->frame = frame;
     this->preprocessFrameAndBackSub();  // conversion to greyscale and update of background subtractor
 
-    if(this->frameCounter < this->frameSetSize) {
-        this->trackKeypoints();
-        this->frameCounter++;
+    if(this->frameCounter == 0) {
+        this->findNewKeypoints();
     }
     else {
-        this->findNewKeypoints();
-        this->frameCounter = 0;
+        this->trackKeypoints();
+
+        ++this->frameCounter < frameSetSize ? this->frameCounter : this->frameCounter = 0;
     }
 
-    return &this->d_keypoints;
+    return this->d_keypoints;
 }
 
 void KPExtractor::preprocessFrameAndBackSub() {
     GpuMat d_blurred;
     Mat blurred;
+
+    // Save previous frame and kp set
+    this->d_frame.copyTo(this->d_prevFrame);
+    this->d_keypoints.copyTo(this->d_prevKeypoints);
 
     // CPU conversion to gray and blurring version of frame to compute the mask
     cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
@@ -67,5 +73,10 @@ void KPExtractor::findNewKeypoints() {
 
 void KPExtractor::trackKeypoints()
 {
-    
+    GpuMat d_status;
+    this->lucasKanadeOpticalFlow->calc( this->d_prevFrame, 
+                                        this->d_frame, 
+                                        this->d_prevKeypoints, 
+                                        this->d_keypoints, 
+                                        d_status);
 }

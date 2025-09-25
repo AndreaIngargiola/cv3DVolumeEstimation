@@ -10,6 +10,7 @@ target_link_libraries(runTests
     PRIVATE
     customMath_module
     vision_module
+    segmentation_module
     GTest::GTest
     GTest::Main
 )
