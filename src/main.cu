@@ -41,19 +41,107 @@ void launchInvertKernel(const unsigned char* input, unsigned char* output, int w
     cudaFree(d_output);
 }
 
-int main() {
-    cv::Mat image = cv::imread("../data/test.jpg");  // <-- put a test image here
-    if (image.empty()) {
-        std::cerr << "Error: Could not load image!\n";
+
+#include <iostream>
+#include <opencv2/opencv.hpp>
+#include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudabgsegm.hpp>
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/dnn.hpp>
+#include <fstream>
+
+using namespace cv::dnn;
+using namespace std;
+using namespace cv;
+
+int main(int argc, char** argv) {
+    std::cout << cv::getBuildInformation() << std::endl;
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <video_path>" << std::endl;
         return -1;
     }
 
-    cv::Mat inverted;
-    invertImageCUDA(image, inverted);
+    cv::VideoCapture cap(argv[1]);
+    if (!cap.isOpened()) {
+        std::cerr << "Cannot open video file: " << argv[1] << std::endl;
+        return -1;
+    }
 
-    cv::imshow("Original", image);
-    cv::imshow("Inverted (CUDA)", inverted);
-    cv::waitKey(0);
+    // CUDA background subtractor (MOG2)
+    cv::Ptr<cv::cuda::BackgroundSubtractorMOG2> pBackSub =
+        cv::cuda::createBackgroundSubtractorMOG2(500, 16.0, true);
+
+    // CUDA goodFeaturesToTrack
+    cv::Ptr<cv::cuda::CornersDetector> detector =
+        cv::cuda::createGoodFeaturesToTrackDetector(
+            CV_8UC1,   // input type (grayscale)
+            1000,       // maxCorners
+            0.01,      // qualityLevel
+            10,        // minDistance
+            3,         // blockSize
+            false,     // useHarrisDetector
+            0.04       // k
+        );
+
+    cv::Mat frame, gray, blurred;
+    cv::cuda::GpuMat d_input, d_mask, d_corners, d_gray;
+
+    while (true) {
+        if (!cap.read(frame) || frame.empty()) break;
+
+        // ---- CPU preprocessing ----
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        d_gray.upload(gray);
+        cv::GaussianBlur(gray, blurred, cv::Size(5,5), 0);
+
+        // ---- Upload to GPU ----
+        d_input.upload(blurred);
+
+        // ---- Background subtraction ----
+        pBackSub->apply(d_input, d_mask);
+
+        cv::Mat mask;
+        d_mask.download(mask);
+
+        // --- CPU morphological filtering ---
+        cv::Mat maskClean;
+        cv::morphologyEx(mask, maskClean, cv::MORPH_OPEN,
+                        cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3,3)));
+        cv::morphologyEx(maskClean, maskClean, cv::MORPH_CLOSE,
+                        cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7,7)));
+
+        cv::morphologyEx(maskClean, maskClean, cv::MORPH_DILATE,
+                 cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7,7)));
+        // Optional: remove shadows (keep only 0/255)
+        cv::threshold(maskClean, maskClean, 200, 255, cv::THRESH_BINARY);
+
+        // Upload back to GPU for masking
+        d_mask.upload(maskClean);
+
+        cv::cuda::threshold(d_mask, d_mask, 200, 255, cv::THRESH_BINARY);
+        cv::cuda::bitwise_and(d_gray, d_mask, d_gray);
+
+        // ---- Detect corners on GPU ----
+        detector->detect(d_gray, d_corners);
+
+        // ---- Download results ----
+        cv::Mat corners;
+        d_mask.download(mask);
+        d_corners.download(corners);
+
+        // Draw corners
+        for (int i = 0; i < corners.cols; i++) {
+            cv::Point2f pt = corners.at<cv::Point2f>(i);
+            cv::circle(frame, pt, 6, cv::Scalar(255,0,0), -1);
+        }
+
+        // Show results
+        cv::imshow("Frame", frame);
+        cv::imshow("Foreground Mask", mask);
+
+        int key = cv::waitKey(1) & 0xFF;
+        if (key == 27) break; // ESC
+    }
 
     return 0;
 }
