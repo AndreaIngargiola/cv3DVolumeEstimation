@@ -17,7 +17,7 @@ class KPExtractor {
     cv::Mat frame; 
     cv::cuda::GpuMat d_frame;
     cv::cuda::GpuMat d_prevFrame;
-    cv::cuda::GpuMat d_mask;
+    cv::cuda::GpuMat& d_mask;
 
     // CUDA background subtractor (MOG2)
     const cv::Ptr<cv::cuda::BackgroundSubtractorMOG2> pBackSub =

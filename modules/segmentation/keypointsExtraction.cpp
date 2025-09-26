@@ -3,8 +3,10 @@
 using namespace cv;
 using namespace cv::cuda;
 
-KPExtractor::KPExtractor(const int frameSetSize, GpuMat& d_mask) : frameSetSize(frameSetSize) {
-    this->d_mask = d_mask;
+KPExtractor::KPExtractor(const int frameSetSize, GpuMat& d_mask) 
+                        : frameSetSize(frameSetSize),
+                        d_mask(d_mask) {
+    //this->d_mask = d_mask;
 }
 
 GpuMat KPExtractor::getUnclusteredKeypoints(cv::Mat& frame) {

@@ -4,6 +4,7 @@ find_package(GTest REQUIRED)
 
 add_executable(runTests
     testUtils.cpp
+    segmentationTests.cpp
 )
 
 target_link_libraries(runTests
