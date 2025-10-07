@@ -55,7 +55,6 @@ using namespace std;
 using namespace cv;
 
 int main(int argc, char** argv) {
-    std::cout << cv::getBuildInformation() << std::endl;
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <video_path>" << std::endl;
         return -1;
@@ -66,7 +65,7 @@ int main(int argc, char** argv) {
         std::cerr << "Cannot open video file: " << argv[1] << std::endl;
         return -1;
     }
-
+    
     // CUDA background subtractor (MOG2)
     cv::Ptr<cv::cuda::BackgroundSubtractorMOG2> pBackSub =
         cv::cuda::createBackgroundSubtractorMOG2(500, 16.0, true);

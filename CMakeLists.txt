@@ -14,6 +14,7 @@ find_package(CUDA REQUIRED)
 add_subdirectory(modules/customMath)
 add_subdirectory(modules/vision)
 add_subdirectory(modules/segmentation)
+add_subdirectory(modules/clustering)
 add_subdirectory(tests)
 
 add_executable(my_app
@@ -28,6 +29,7 @@ target_link_libraries(my_app
     customMath_module
     vision_module
     segmentation_module
+    clustering_module
 )
 
 target_include_directories(my_app PRIVATE
@@ -37,6 +39,7 @@ target_include_directories(my_app PRIVATE
     customMath_module
     vision_module
     segmentation_module
+    clustering_module
 )
 
 set_target_properties(my_app PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
