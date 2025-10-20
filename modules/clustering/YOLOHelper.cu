@@ -21,7 +21,8 @@ namespace fs = std::filesystem;
 // === GPU Kernel ===
 __global__
 void parseRowIntoDetectionKernel(const float* src, Detection* dst,
-                                    int rows, int cols, size_t step, float confThreshold)
+                                    int rows, int cols, size_t step, float confThreshold,
+                                int pad_x, int pad_y, float scale, int frame_w, int frame_h)
 {
     // One thread per row (YOLO detection candidate)
     int row = blockIdx.x * blockDim.x + threadIdx.x;
@@ -54,12 +55,23 @@ void parseRowIntoDetectionKernel(const float* src, Detection* dst,
         return;
     }
 
-    // Fill detection struct
+    // Fill detection struct (undo letterboxing in the meantime)
     Detection det;
-    det.cx = rowPtr[0];
-    det.cy = rowPtr[1];
-    det.w  = rowPtr[2];
-    det.h  = rowPtr[3];
+
+    float x = ((rowPtr[0] - pad_x) / scale);
+    float y = ((rowPtr[1] - pad_y) / scale);
+    float width = (rowPtr[2] / scale);
+    float height = (rowPtr[3] / scale);
+
+    int left = int(x - width / 2);
+    int top  = int(y - height / 2);
+
+    // Clip to image bounds
+    det.left = max(0, left);
+    det.top = max(0, top);
+    det.w = min((float) width, (float)(frame_w- left));
+    det.h = min((float) height, (float)(frame_h - top));
+   
     det.score = conf;
     det.classId = bestClass;
 
@@ -164,7 +176,9 @@ void YOLOHelper::parseDetections(Mat& h_out, vector<Rect>& boxes, vector<float>&
         numDetections, 
         numFeatures, 
         step, 
-        confThreshold
+        confThreshold,
+        pad_x, pad_y, scale,
+        this->frameSize.width, this->frameSize.height
     );
     cudaDeviceSynchronize();
 
@@ -181,27 +195,13 @@ void YOLOHelper::parseDetections(Mat& h_out, vector<Rect>& boxes, vector<float>&
     // Extract rectangles and confidences from Detections to perform NMS
     boxes.resize(d_detections.size());
  
-    // Transform Detection -> cv::Rect, undoing letterboxing
+    // Transform Detection -> cv::Rect
     std::transform(
         h_detections.begin(),
         h_detections.end(),
         boxes.begin(),
-        [this](const Detection& d) {
-            float x = ((d.cx - pad_x) / scale);
-            float y = ((d.cy - pad_y) / scale);
-            float width = (d.w  / scale);
-            float height = (d.h / scale);
-
-            int left = int(x - width / 2);
-            int top  = int(y - height / 2);
-
-            // Clip to image bounds
-            left = max(0, left);
-            top = max(0, top);
-            width = min((float) width, (float)(this->frameSize.width - left));
-            height = min((float) height, (float)(this->frameSize.height - top));
-
-            return cv::Rect(left, top, (int)width, (int)height);
+        [](const Detection& d) {
+            return cv::Rect(d.left, d.top, (int)d.w, (int)d.h);
         }
     );
 

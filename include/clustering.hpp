@@ -4,6 +4,7 @@
 #include <opencv2/cudabgsegm.hpp>
 #include <opencv2/cudaarithm.hpp>
 #include <opencv2/dnn.hpp>
+#include <thrust/device_vector.h>
 #include <fstream>
 
 class YOLOHelper {
@@ -33,7 +34,49 @@ class YOLOHelper {
 };
 
 struct Detection {
-    float cx, cy, w, h;
+    float top, left, w, h;
     float score;
     int classId;
 };
+
+struct Centroid {
+    int classId;
+    float x, y, h, s, v;
+    float lastUpdateDistance;
+};
+
+struct DataPoint {
+    float features[5];
+    int classId = -1;
+    int isSupervised = 0;
+};
+
+class Clusterer {
+    private:
+    YOLOHelper boxFinder;
+    int k;
+    thrust::device_vector<Centroid> d_centroids;
+    thrust::device_vector<DataPoint> d_keypoints;
+    const int frameSetSize;
+
+    public:
+    Clusterer(YOLOHelper& boxFinder, const float threshold, const int frameSetSize);
+    void clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP);
+    void inheritClusters(cv::cuda::GpuMat d_statusKP, cv::cuda::GpuMat d_unclusteredKP);
+    thrust::device_vector<DataPoint> getDatapoints();
+    thrust::device_vector<Centroid> getCentroids();
+    float updateCentroids();
+    void updateKeypoints();
+};
+
+/*
+    clusterize(d_unclusteredKP);
+        1) boxFinder.getBBOfPeople (result is a vector of cv::Rect on CPU)
+        2) d_unclusteredKP -> Keypoints (define classId and isSupervised)
+        3) res = updateCentroids(keypoints.isSupervised == true) (create Centroids with lastUpdateDistance = MAX_FLOAT)
+        while (res > threshold) {
+            updateKeypoints(keypoints.isSupervised = false)
+            res = updateCentroids()
+        //}
+
+*/
