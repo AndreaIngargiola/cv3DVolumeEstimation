@@ -18,6 +18,7 @@ class KPExtractor {
     cv::cuda::GpuMat d_frame;
     cv::cuda::GpuMat d_prevFrame;
     cv::cuda::GpuMat& d_mask;
+    cv::cuda::GpuMat& d_cumulativeStatus;
 
     // CUDA background subtractor (MOG2)
     const cv::Ptr<cv::cuda::BackgroundSubtractorMOG2> pBackSub =
@@ -39,7 +40,7 @@ class KPExtractor {
         cv::cuda::SparsePyrLKOpticalFlow::create();
 
     public:
-    KPExtractor(const int frameSetSize, cv::cuda::GpuMat& d_mask);
+    KPExtractor(const int frameSetSize, cv::cuda::GpuMat& d_mask, cv::cuda::GpuMat& d_cumulativeStatus);
     cv::cuda::GpuMat getUnclusteredKeypoints(cv::Mat& frame);
 
     private:

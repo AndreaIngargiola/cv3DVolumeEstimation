@@ -13,6 +13,8 @@
 TEST(SegmentationTest, KPExtractor_tracking) {
     using namespace cv;
     VideoCapture cap("../../data/video/video.mp4");
+    ASSERT_TRUE(cap.isOpened()) << "Video could not be opened!";
+
     Mat frame;
     cap.read(frame);
     int width = frame.size[1], height = frame.size[0];
@@ -29,25 +31,30 @@ TEST(SegmentationTest, KPExtractor_tracking) {
     }
 
     cuda::GpuMat d_mask;
-    cuda::GpuMat d_keypoints;
-    KPExtractor kpex = KPExtractor(fps, d_mask);
-    Mat frameToShow, keypoints;
+    cuda::GpuMat d_keypoints, d_cumulativeStatus;
+    KPExtractor kpex = KPExtractor(fps, d_mask, d_cumulativeStatus);
+    Mat frameToShow, keypoints, status;
+    cv::Scalar color;
     int i = 0;
+
     while(true){
         if (!cap.read(frame) || frame.empty() || i >= 750) break;
         frame.copyTo(frameToShow);
         d_keypoints = kpex.getUnclusteredKeypoints(frame);
-
+        d_cumulativeStatus.download(status);
         d_keypoints.download(keypoints);
+        if(i == 700) std::cout << status.row(0) << std::endl;
 
         // Draw corners
         for (int j = 0; j < keypoints.cols; j++) {
             cv::Point2f pt = keypoints.at<cv::Point2f>(j);
-            if(i % fps == 0){               //if new keypoints show them red
-                cv::circle(frameToShow, pt, 6, cv::Scalar(0,0,255), -1);
+            if(i % fps == 0){               //if new keypoints show them blue
+                color = cv::Scalar(255,0,0);
             } else {
-                cv::circle(frameToShow, pt, 6, cv::Scalar(255,0,0), -1);
+                if(status.at<float>(0,j) > 0.0f) color = cv::Scalar(0,255,0); //if tracked by lukas kanade, show them green
+                else  color = cv::Scalar(0,0,255); //if lost, show them red
             }
+            cv::circle(frameToShow, pt, 6, color, -1);
         }
 
         // Write the frame to video
@@ -77,8 +84,8 @@ TEST(SegmentationTest, KPExtractor_backsub) {
         std::cerr << "Could not open the output video file" << std::endl;
     }
 
-    cuda::GpuMat d_mask;
-    KPExtractor kpex = KPExtractor(fps, d_mask);
+    cuda::GpuMat d_mask, d_cumulativeStatus;
+    KPExtractor kpex = KPExtractor(fps, d_mask, d_cumulativeStatus);
     Mat frameToShow;
     int i = 0;
     while(true){

@@ -3,10 +3,10 @@
 using namespace cv;
 using namespace cv::cuda;
 
-KPExtractor::KPExtractor(const int frameSetSize, GpuMat& d_mask) 
+KPExtractor::KPExtractor(const int frameSetSize, GpuMat& d_mask, GpuMat& d_cumulativeStatus) 
                         : frameSetSize(frameSetSize),
-                        d_mask(d_mask) {
-    //this->d_mask = d_mask;
+                        d_mask(d_mask),
+                        d_cumulativeStatus(d_cumulativeStatus) {
 }
 
 GpuMat KPExtractor::getUnclusteredKeypoints(cv::Mat& frame) {
@@ -71,6 +71,11 @@ void KPExtractor::findNewKeypoints() {
 
     // Detect corners on GPU
     kpDetector->detect(d_frame, this->d_keypoints);
+
+    // Reset cumulativeStatus
+    int cols = std::max(1, d_keypoints.cols / 2);
+    this->d_cumulativeStatus.create(1, cols, CV_32FC1);
+    this->d_cumulativeStatus.setTo(cv::Scalar(1.0f));
 }
 
 void KPExtractor::trackKeypoints()
@@ -81,4 +86,7 @@ void KPExtractor::trackKeypoints()
                                         this->d_prevKeypoints, 
                                         this->d_keypoints, 
                                         d_status);
+
+    // Update statuses accumulator (multiply guarantees that if a keypoint has status = 0 will remain 0 forever)
+    cuda::multiply(this->d_cumulativeStatus, d_status, this->d_cumulativeStatus);
 }
