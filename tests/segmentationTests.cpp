@@ -36,29 +36,46 @@ TEST(SegmentationTest, KPExtractor_tracking) {
     Mat frameToShow, keypoints, status;
     cv::Scalar color;
     int i = 0;
+    int deadKP = 0;
 
     while(true){
         if (!cap.read(frame) || frame.empty() || i >= 750) break;
+        if(i < 100) {
+            i++;
+            continue;
+        }
         frame.copyTo(frameToShow);
         d_keypoints = kpex.getUnclusteredKeypoints(frame);
         d_cumulativeStatus.download(status);
         d_keypoints.download(keypoints);
-        if(i == 700) std::cout << status.row(0) << std::endl;
-
         // Draw corners
         for (int j = 0; j < keypoints.cols; j++) {
-            cv::Point2f pt = keypoints.at<cv::Point2f>(j);
+            cv::Point2f pt = keypoints.at<Point2f>(0,j);
             if(i % fps == 0){               //if new keypoints show them blue
                 color = cv::Scalar(255,0,0);
             } else {
-                if(status.at<float>(0,j) > 0.0f) color = cv::Scalar(0,255,0); //if tracked by lukas kanade, show them green
-                else  color = cv::Scalar(0,0,255); //if lost, show them red
+                if(status.at<uchar>(j) == 255) color = cv::Scalar(0,255,0); //if tracked by lukas kanade, show them green
+                else  {
+                    color = cv::Scalar(0,0,255); //if lost, show them red
+                    deadKP++;
+                }
+
             }
             cv::circle(frameToShow, pt, 6, color, -1);
         }
 
+        // Draw it on the frame (top-left corner)
+        cv::putText(frameToShow, 
+                    "Dead keypoints: " + std::to_string(deadKP), 
+                    cv::Point(10, 30),           // position in pixels
+                    cv::FONT_HERSHEY_SIMPLEX,    // font
+                    1.0,                         // font scale
+                    cv::Scalar(0, 0, 255),       // color (red)
+                    2);                          // thickness
+        
         // Write the frame to video
         writer.write(frameToShow);
+        deadKP = 0;
         i++;
     }
 

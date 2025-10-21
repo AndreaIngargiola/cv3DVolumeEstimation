@@ -9,16 +9,16 @@ KPExtractor::KPExtractor(const int frameSetSize, GpuMat& d_mask, GpuMat& d_cumul
                         d_cumulativeStatus(d_cumulativeStatus) {
 }
 
-GpuMat KPExtractor::getUnclusteredKeypoints(cv::Mat& frame) {
+GpuMat KPExtractor::getUnclusteredKeypoints(Mat& frame) {
     this->frame = frame;
     this->preprocessFrameAndBackSub();  // conversion to greyscale and update of background subtractor
 
     if(this->frameCounter == 0) {
         this->findNewKeypoints();
+        this->frameCounter++;
     }
     else {
-        this->trackKeypoints();
-
+        if(this->d_cumulativeStatus.cols > 1) this->trackKeypoints(); //track keypoints only if there are keypoints to track
         ++this->frameCounter < frameSetSize ? this->frameCounter : this->frameCounter = 0;
     }
 
@@ -37,7 +37,7 @@ void KPExtractor::preprocessFrameAndBackSub() {
     cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
     d_frame.upload(frame);
 
-    cv::GaussianBlur(frame, blurred, cv::Size(5,5), 0);
+    cv::GaussianBlur(frame, blurred, Size(5,5), 0);
     d_blurred.upload(blurred);
 
     // Creation of updated mask for background subtraction
@@ -46,36 +46,35 @@ void KPExtractor::preprocessFrameAndBackSub() {
 
 void KPExtractor::findNewKeypoints() {
     Mat mask;
+    GpuMat d_maskedFrame;
+
+    // Remove shadows (keep only 0/255)
+    cv::cuda::threshold(d_mask, d_mask, 200, 255, THRESH_BINARY);
     d_mask.download(mask);
 
     // CPU morphological filtering
     cv::morphologyEx(mask, mask, cv::MORPH_OPEN,
-                    cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3,3)));
+                    cv::getStructuringElement(cv::MORPH_RECT, Size(3,3)));
 
     cv::morphologyEx(mask, mask, cv::MORPH_CLOSE,
-                    cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7,7)));
+                    cv::getStructuringElement(cv::MORPH_RECT, Size(7,7)));
 
     cv::morphologyEx(mask, mask, cv::MORPH_DILATE,
-                cv::getStructuringElement(cv::MORPH_RECT, cv::Size(7,7)));
-
-    //cv::threshold(maskClean, maskClean, 200, 255, cv::THRESH_BINARY);
+                cv::getStructuringElement(cv::MORPH_RECT, Size(7,7)));
 
     // Upload back to GPU for masking
     d_mask.upload(mask);
 
-    // Remove shadows (keep only 0/255)
-    cv::cuda::threshold(d_mask, d_mask, 200, 255, cv::THRESH_BINARY);
-
     // Apply mask to grayscale frame
-    cv::cuda::bitwise_and(d_frame, d_mask, d_frame);
+    cv::cuda::bitwise_and(d_frame, d_mask, d_maskedFrame);
 
     // Detect corners on GPU
-    kpDetector->detect(d_frame, this->d_keypoints);
-
+    kpDetector->detect(d_maskedFrame, this->d_keypoints);
+    
     // Reset cumulativeStatus
-    int cols = std::max(1, d_keypoints.cols / 2);
-    this->d_cumulativeStatus.create(1, cols, CV_32FC1);
-    this->d_cumulativeStatus.setTo(cv::Scalar(1.0f));
+    int cols = std::max(1, d_keypoints.cols);
+    this->d_cumulativeStatus.create(1, cols, CV_8UC1);
+    this->d_cumulativeStatus.setTo(Scalar(255));
 }
 
 void KPExtractor::trackKeypoints()
@@ -86,7 +85,13 @@ void KPExtractor::trackKeypoints()
                                         this->d_prevKeypoints, 
                                         this->d_keypoints, 
                                         d_status);
-
+    
     // Update statuses accumulator (multiply guarantees that if a keypoint has status = 0 will remain 0 forever)
     cuda::multiply(this->d_cumulativeStatus, d_status, this->d_cumulativeStatus);
+
+   
+    // Overwrite dead keypoints in place
+    cv::cuda::GpuMat d_invertedMask;
+    cv::cuda::compare(this->d_cumulativeStatus, cv::Scalar(0), d_invertedMask, cv::CMP_EQ);
+    this->d_keypoints.setTo(cv::Scalar(-1.0f, -1.0f), d_invertedMask);
 }
