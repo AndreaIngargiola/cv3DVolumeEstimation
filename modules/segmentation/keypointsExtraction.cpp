@@ -27,7 +27,7 @@ GpuMat KPExtractor::getUnclusteredKeypoints(Mat& frame) {
 
 void KPExtractor::preprocessFrameAndBackSub() {
     GpuMat d_blurred;
-    Mat blurred;
+    Mat blurred, mask;
 
     // Save previous frame and kp set
     this->d_frame.copyTo(this->d_prevFrame);
@@ -42,34 +42,33 @@ void KPExtractor::preprocessFrameAndBackSub() {
 
     // Creation of updated mask for background subtraction
     pBackSub->apply(d_blurred, d_mask);
-}
-
-void KPExtractor::findNewKeypoints() {
-    Mat mask;
-    GpuMat d_maskedFrame;
 
     // Remove shadows (keep only 0/255)
     cv::cuda::threshold(d_mask, d_mask, 200, 255, THRESH_BINARY);
     d_mask.download(mask);
 
     // CPU morphological filtering
+    cv::morphologyEx(mask, mask, cv::MORPH_ERODE,
+                cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(5,5)));
+                
     cv::morphologyEx(mask, mask, cv::MORPH_OPEN,
-                    cv::getStructuringElement(cv::MORPH_RECT, Size(3,3)));
+                    cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(3,3)));
 
     cv::morphologyEx(mask, mask, cv::MORPH_CLOSE,
-                    cv::getStructuringElement(cv::MORPH_RECT, Size(7,7)));
+                    cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(7,7)));
 
-    cv::morphologyEx(mask, mask, cv::MORPH_DILATE,
-                cv::getStructuringElement(cv::MORPH_RECT, Size(7,7)));
+    
 
     // Upload back to GPU for masking
     d_mask.upload(mask);
 
     // Apply mask to grayscale frame
-    cv::cuda::bitwise_and(d_frame, d_mask, d_maskedFrame);
+    cv::cuda::bitwise_and(d_frame, d_mask, d_frame);
+}
 
+void KPExtractor::findNewKeypoints() {
     // Detect corners on GPU
-    kpDetector->detect(d_maskedFrame, this->d_keypoints);
+    kpDetector->detect(d_frame, this->d_keypoints);
     
     // Reset cumulativeStatus
     int cols = std::max(1, d_keypoints.cols);
@@ -80,6 +79,7 @@ void KPExtractor::findNewKeypoints() {
 void KPExtractor::trackKeypoints()
 {
     GpuMat d_status;
+
     this->lucasKanadeOpticalFlow->calc( this->d_prevFrame, 
                                         this->d_frame, 
                                         this->d_prevKeypoints, 
