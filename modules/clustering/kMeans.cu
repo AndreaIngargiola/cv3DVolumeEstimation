@@ -7,7 +7,6 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #include <thrust/remove.h>
-#include <thrust/device_vector.h>
 #include <thrust/transform.h>
 #include <filesystem>
 #include <clustering.hpp>
@@ -115,10 +114,11 @@ void parseMatIntoKeypointsKernel(
 
 Clusterer::Clusterer(
     YOLOHelper& boxFinder, 
-    const float threshold, 
+    const float shiftThreshold, 
     const int frameSetSize):
         boxFinder(boxFinder), 
-        frameSetSize(frameSetSize){
+        frameSetSize(frameSetSize),
+        shiftThreshold(shiftThreshold){
 
 }
 
@@ -135,7 +135,8 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
     const int step = d_hsv.step;
 
     // 2. Prepare YOLO bounding boxes on device
-    vector<cv::Rect> boundingBoxes = this->boxFinder.getBBOfPeople(frame);
+    this->boxes = this->boxFinder.getBBOfPeople(frame);
+    vector<cv::Rect> boundingBoxes = boxes;
     thrust::host_vector<Detection> h_dets;
     
     for (int i = 0; i < boundingBoxes.size(); ++i) {
@@ -160,7 +161,7 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
     int numKeypoints = kpSize / 2;  // since each keypoint = 2 floats (x, y)
     this->d_keypoints.resize(numKeypoints);
 
-     // 4. Configure CUDA grid
+    // 4. Configure CUDA grid
     const int threadsPerBlock = 256;
     const int numBlocks = (numKeypoints + threadsPerBlock - 1) / threadsPerBlock;
 
@@ -175,9 +176,24 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
     cudaDeviceSynchronize();
 
     // 6. Compute starting centroids
+    float sumSquaredShift = this->updateCentroids();
+
+    // 7. Perform K-means clustering on the non-supervised keypoints
+    while (sumSquaredShift > this->shiftThreshold) {
+        this->updateKeypoints();
+        sumSquaredShift = this->updateCentroids();
+    }
+
+    this->isFirstIteration = true;
+}
+
+float Clusterer::updateCentroids(){
+    if (!this->isFirstIteration) this->d_oldCentroids = this->d_centroids;
+
     thrust::device_vector<DataPoint> d_tmpKP = this->d_keypoints;
     using AccumTuple = thrust::tuple<float,float,float,float,float,float>;  // <x, y, h, s, v, countClusterMembers>
 
+    //filter out non assigned DataPoints (de-facto filter out all non-supervised)
     auto end_it = thrust::remove_if(
         d_tmpKP.begin(), d_tmpKP.end(),
         [] __device__ (const DataPoint& p) {
@@ -187,7 +203,7 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
 
     d_tmpKP.erase(end_it, d_tmpKP.end());
 
-
+    // Get keys and values from DataPoints (keys = classId) to sum reduce
     thrust::device_vector<int> keys(d_tmpKP.size());
     thrust::device_vector<AccumTuple> values(d_tmpKP.size());
 
@@ -208,22 +224,12 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
         }
     );
 
-    auto reduce_op = [] __host__ __device__ (const AccumTuple& a, const AccumTuple& b) {
-        return AccumTuple{
-            thrust::get<0>(a) + thrust::get<0>(b),
-            thrust::get<1>(a) + thrust::get<1>(b),
-            thrust::get<2>(a) + thrust::get<2>(b),
-            thrust::get<3>(a) + thrust::get<3>(b),
-            thrust::get<4>(a) + thrust::get<4>(b),
-            thrust::get<5>(a) + thrust::get<5>(b)
-        };
-    };
-
     thrust::device_vector<int> unique_keys(d_tmpKP.size());
     thrust::device_vector<AccumTuple> reduced_vals(d_tmpKP.size());
     
     thrust::sort_by_key(keys.begin(), keys.end(), values.begin());
     
+    // Sum reduce the DataPoints array by classId
     auto new_end = thrust::reduce_by_key(
         keys.begin(),
         keys.end(),
@@ -231,23 +237,25 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
         unique_keys.begin(),
         reduced_vals.begin(),
         thrust::equal_to<int>(),
-        reduce_op
+        [] __host__ __device__ (const AccumTuple& a, const AccumTuple& b) {
+            return AccumTuple{
+                thrust::get<0>(a) + thrust::get<0>(b),
+                thrust::get<1>(a) + thrust::get<1>(b),
+                thrust::get<2>(a) + thrust::get<2>(b),
+                thrust::get<3>(a) + thrust::get<3>(b),
+                thrust::get<4>(a) + thrust::get<4>(b),
+                thrust::get<5>(a) + thrust::get<5>(b)
+            };
+        }
     );
-/*
-    thrust::host_vector<int> h_uniq = unique_keys;
-    for (int i = 0; i < h_uniq.size(); i++){
-        std::cout << h_uniq[i] << " ";
-    }
-    std::cout << std::endl;
-    */
 
-    int n_groups = new_end.first - unique_keys.begin();
-    cout << "N_GROUPS =  " << n_groups << endl;
-    this->d_centroids.resize(n_groups);
+    this->k = new_end.first - unique_keys.begin();
+    this->d_centroids.resize(this->k);
 
+    // Perform the means on the summed features of each one of the k centroids
     thrust::for_each_n(
         thrust::make_counting_iterator(0),
-        n_groups,
+        this->k,
         [centroids_ptr = thrust::raw_pointer_cast(d_centroids.data()),
         keys_ptr = thrust::raw_pointer_cast(unique_keys.data()),
         sums_ptr = thrust::raw_pointer_cast(reduced_vals.data())] __device__ (int i)
@@ -263,11 +271,33 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
                 centroids_ptr[cid].s = thrust::get<3>(s) / count;
                 centroids_ptr[cid].v = thrust::get<4>(s) / count;
                 centroids_ptr[cid].classId = i;
-               
-                centroids_ptr[cid].lastUpdateDistance = MAXFLOAT;
             }
         }
     );
+
+    if(this->isFirstIteration) {
+        this->isFirstIteration = false;
+        return MAXFLOAT;
+    }
+    // 5. Compute convergence: mean squared centroid shift
+    thrust::device_vector<float> diffs(this->k);
+
+    thrust::transform(
+        this->d_centroids.begin(), this->d_centroids.end(),
+        this->d_oldCentroids.begin(),
+        diffs.begin(),
+        [] __device__ (const Centroid& a, const Centroid& b) {
+            float dx = a.x - b.x;
+            float dy = a.y - b.y;
+            float dh = a.h - b.h;
+            float ds = a.s - b.s;
+            float dv = a.v - b.v;
+            return dx*dx + dy*dy + dh*dh + ds*ds + dv*dv;
+        }
+    );
+
+    float sum = thrust::reduce(diffs.begin(), diffs.end(), 0.0f, thrust::plus<float>());
+    return sum / this->k; // av
 }
 
 thrust::device_vector<DataPoint> Clusterer::getDatapoints() {
@@ -278,6 +308,70 @@ thrust::device_vector<Centroid> Clusterer::getCentroids() {
     return this->d_centroids;
 }
 
-void Clusterer::inheritClusters(GpuMat d_statusKP, GpuMat d_unclusteredKP) {
+void Clusterer::inheritClusters(GpuMat d_statusKP, GpuMat d_unclusteredKP, GpuMat d_frame) {
+    const int rows = d_frame.rows;
+    const int cols = d_frame.cols;
+    const int step = d_frame.step;
 
+    int kpSize = d_unclusteredKP.rows * d_unclusteredKP.cols * d_unclusteredKP.channels();
+    int numKeypoints = kpSize / 2;  // since each keypoint = 2 floats (x, y)
+    this->d_keypoints.resize(numKeypoints);
+    
+    // 4. Configure CUDA grid
+    const int threadsPerBlock = 256;
+    const int numBlocks = (numKeypoints + threadsPerBlock - 1) / threadsPerBlock;
+
+    // 5. Run kernel to get the initial supervised and unsupervised DataPoints to clusterize
+    parseMatIntoEnstablishedClustersKernel<<<numBlocks, threadsPerBlock>>>(
+        reinterpret_cast<const float*>(d_unclusteredKP.ptr<float>()), kpSize,
+        rows, cols, step,
+        thrust::raw_pointer_cast(this->d_keypoints.data()),
+        reinterpret_cast<const float*>(d_statusKP.ptr<float>()),
+        thrust::raw_pointer_cast(this->d_keypoints.data())
+    );
+
+    cudaDeviceSynchronize();
+}
+
+struct AssignToNearestCentroid {
+    const Centroid* centroids;
+    int k;
+
+    AssignToNearestCentroid(const Centroid* c, int k)
+        : centroids(c), k(k) {}
+
+    __device__ void operator()(DataPoint& p) const {
+        if (p.isSupervised) return; // skip supervised points
+        if (p.classId == -1) return; // skip dead keypoints
+
+        float minDist = MAXFLOAT;
+        int bestId = -1;
+
+        for (int i = 0; i < k; ++i) {
+            const Centroid& c = centroids[i];
+            float dx = p.features[0] - c.x;
+            float dy = p.features[1] - c.y;
+            float dh = p.features[2] - c.h;
+            float ds = p.features[3] - c.s;
+            float dv = p.features[4] - c.v;
+            float dist = dx*dx + dy*dy + dh*dh + ds*ds + dv*dv;
+            if (dist < minDist) {
+                minDist = dist;
+                bestId = c.classId;
+            }
+        }
+        p.classId = bestId;
+    }
+};
+
+void Clusterer::updateKeypoints(){
+    thrust::for_each(
+        this->d_keypoints.begin(), this->d_keypoints.end(),
+        AssignToNearestCentroid(
+            thrust::raw_pointer_cast(this->d_centroids.data()), this->d_centroids.size())
+    );
+}
+
+std::vector<cv::Rect> Clusterer::getBoxes() {
+    return this->boxes;
 }

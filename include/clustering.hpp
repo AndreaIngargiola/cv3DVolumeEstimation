@@ -42,7 +42,6 @@ struct Detection {
 struct Centroid {
     int classId;
     float x, y, h, s, v;
-    float lastUpdateDistance;
 };
 
 struct DataPoint {
@@ -56,15 +55,21 @@ class Clusterer {
     YOLOHelper boxFinder;
     int k;
     thrust::device_vector<Centroid> d_centroids;
+    thrust::device_vector<Centroid> d_oldCentroids;
     thrust::device_vector<DataPoint> d_keypoints;
     const int frameSetSize;
+    const float shiftThreshold;
+    bool isFirstIteration = true;
+    std::vector<cv::Rect> boxes;
 
     public:
-    Clusterer(YOLOHelper& boxFinder, const float threshold, const int frameSetSize);
+    Clusterer(YOLOHelper& boxFinder, const float shiftThreshold, const int frameSetSize);
     void clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP);
-    void inheritClusters(cv::cuda::GpuMat d_statusKP, cv::cuda::GpuMat d_unclusteredKP);
+    void inheritClusters(cv::cuda::GpuMat d_statusKP, cv::cuda::GpuMat d_unclusteredKP, cv::cuda::GpuMat d_frame);
     thrust::device_vector<DataPoint> getDatapoints();
     thrust::device_vector<Centroid> getCentroids();
+    std::vector<cv::Rect> getBoxes();
+    
     float updateCentroids();
     void updateKeypoints();
 };
