@@ -6,6 +6,16 @@
 #include <opencv2/dnn.hpp>
 #include <thrust/device_vector.h>
 #include <fstream>
+#include <utility> 
+
+struct Detection {
+    float top = -1;
+    float left = -1;
+    float w = -1;
+    float h = -1;
+    float score = -1;
+    int classId = -1;
+};
 
 class YOLOHelper {
     private:
@@ -25,19 +35,17 @@ class YOLOHelper {
         const cv::Size targetSize, 
         const float confThreshold,  
         const float nmsThreshold);
-    std::vector<cv::Rect> getBBOfPeople(cv::Mat& frame);
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>>  getBBOfPeople(cv::Mat& frame);
     
     private:
     cv::Mat letterbox(const cv::Mat& d_src);
-    void parseDetections(cv::Mat& d_out, std::vector<cv::Rect>& boxes, std::vector<float>& confidences);
-
+    //void parseDetections(cv::Mat& d_out, std::vector<cv::Rect>& boxes, std::vector<float>& confidences);
+    std::vector<Detection> parseDetections(const std::vector<cv::Mat>& outputs,
+                                       int inputWidth, int inputHeight,
+                                       float confThreshold,
+                                       float nmsThreshold);
 };
 
-struct Detection {
-    float top, left, w, h;
-    float score;
-    int classId;
-};
 
 struct Centroid {
     int classId;
@@ -61,6 +69,7 @@ class Clusterer {
     const float shiftThreshold;
     bool isFirstIteration = true;
     std::vector<cv::Rect> boxes;
+    std::vector<cv::Rect> boxesHeads;
 
     public:
     Clusterer(YOLOHelper& boxFinder, const float shiftThreshold, const int frameSetSize);
@@ -68,7 +77,7 @@ class Clusterer {
     void inheritClusters(cv::cuda::GpuMat d_statusKP, cv::cuda::GpuMat d_unclusteredKP, cv::cuda::GpuMat d_frame);
     thrust::device_vector<DataPoint> getDatapoints();
     thrust::device_vector<Centroid> getCentroids();
-    std::vector<cv::Rect> getBoxes();
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> getBoxes();
     
     float updateCentroids();
     void updateKeypoints();

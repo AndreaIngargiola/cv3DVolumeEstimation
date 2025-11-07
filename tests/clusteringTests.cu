@@ -31,7 +31,7 @@ TEST(ClusteringTest, YOLOtest) {
     Mat frameToShow;
     image.copyTo(frameToShow);
 
-    std::vector<cv::Rect> boundingBoxes = yh.getBBOfPeople(image);
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boundingBoxes = yh.getBBOfPeople(image);
     
     // Save results in an image
     cv::RNG rng(cv::getTickCount());
@@ -41,11 +41,38 @@ TEST(ClusteringTest, YOLOtest) {
         50 + rng.uniform(0, 206)
     );
 
-    for (cv::Rect box : boundingBoxes) {
+    for (cv::Rect box : boundingBoxes.first) {
         rectangle(frameToShow, box, brightColor, 2);
     }
 
     cv::imwrite("testYOLO.png", frameToShow);
+}
+
+cv::Scalar getColorByClass(int classId) {
+    switch(classId) {
+            case -2: {
+                return cv::Scalar(0,0,0); //TO CLUSTERIZE -> BLACK
+                break;
+            }
+            case -1: {
+                return cv::Scalar(255,255,255); //TO DELETE -> WHITE
+                break;
+            }
+            
+            case 0: {
+                return cv::Scalar(0,0,255);  //CLASS 0 -> RED
+                break;
+            }
+
+            case 1: {
+                return cv::Scalar(0,255,0); //CLASS 1 -> GREEN
+                break;
+            }
+
+            default: {
+                return cv::Scalar(255,0,0); //CLASS 2...K -> BLUE
+            }
+        }
 }
 
 TEST(ClusteringTest, KMeansTest) {
@@ -110,31 +137,7 @@ TEST(ClusteringTest, KMeansTest) {
 
     for(DataPoint dp : h_kp) {
         cv::Point2i pt = Point2i(dp.features[0] * image.size().width, dp.features[1] * image.size().height);
-        cv::Scalar color;
-        switch(dp.classId) {
-            case -2: {
-                color = Scalar(0,0,0); //TO CLUSTERIZE -> BLACK
-                break;
-            }
-            case -1: {
-                color = Scalar(255,255,255); //TO DELETE -> WHITE
-                break;
-            }
-            
-            case 0: {
-                color = Scalar(0,0,255);  //CLASS 0 -> RED
-                break;
-            }
-
-            case 1: {
-                color = Scalar(0,255,0); //CLASS 1 -> GREEN
-                break;
-            }
-
-            default: {
-                color = Scalar(255,0,0); //CLASS 2...K -> BLUE
-            }
-        }
+        cv::Scalar color = getColorByClass(dp.classId);
         cv::circle(frameToShowCl, pt, 6, color, -1); 
     }
 
@@ -145,31 +148,7 @@ TEST(ClusteringTest, KMeansTest) {
     
     for(Centroid cent : h_cent) {
         cv::Point2i pt = Point2i(cent.x * image.size().width, cent.y * image.size().height);
-        cv::Scalar color;
-        switch(cent.classId) {
-            case -2: {
-                color = Scalar(0,0,0); //TO CLUSTERIZE -> BLACK
-                break;
-            }
-            case -1: {
-                color = Scalar(255,255,255); //TO DELETE -> WHITE
-                break;
-            }
-            
-            case 0: {
-                color = Scalar(0,0,255);  //CLASS 0 -> RED
-                break;
-            }
-
-            case 1: {
-                color = Scalar(0,255,0); //CLASS 1 -> GREEN
-                break;
-            }
-
-            default: {
-                color = Scalar(255,0,0); //CLASS 2...K -> BLUE
-            }
-        }
+        cv::Scalar color = getColorByClass(cent.classId);
         cv::rectangle(frameToShowCl, pt, Point2i(pt.x + 15, pt.y + 15), color, 6); 
     }
 
@@ -220,7 +199,7 @@ TEST(ClusteringTest, KMeansVideoTest) {
     thrust::host_vector<Centroid> h_centroids;
     thrust::device_vector<DataPoint> d_dataPoints;
     thrust::host_vector<DataPoint> h_dataPoints;
-    std::vector<cv::Rect> boxes;
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boxes;
 
     while(true){
         if (!cap.read(frame) || frame.empty() || i >= 1400) break;
@@ -250,71 +229,177 @@ TEST(ClusteringTest, KMeansVideoTest) {
             cv::Point2f pt = keypoints.at<Point2f>(0,j);
             DataPoint dp = h_dataPoints[j];
             
-            cv::Scalar color;
-            switch(dp.classId) {
-                case -2: {
-                    color = Scalar(0,0,0); //TO CLUSTERIZE -> BLACK
-                    break;
-                }
-                case -1: {
-                    color = Scalar(255,255,255); //TO DELETE -> WHITE
-                    break;
-                }
-                
-                case 0: {
-                    color = Scalar(0,0,255);  //CLASS 0 -> RED
-                    break;
-                }
-
-                case 1: {
-                    color = Scalar(0,255,0); //CLASS 1 -> GREEN
-                    break;
-                }
-
-                default: {
-                    color = Scalar(255,0,0); //CLASS 2...K -> BLUE
-                }
-            }
+            cv::Scalar color = getColorByClass(dp.classId);
             cv::circle(frameToShow, pt, 6, color, -1);
         }
 
         //draw centroids
         for (Centroid c : h_centroids) {
             cv::Point2i pt = Point2i(c.x * frame.size().width, c.y * frame.size().height);
-            cv::Scalar color;
-            switch(c.classId) {
-                case -2: {
-                    color = Scalar(0,0,0); //TO CLUSTERIZE -> BLACK
-                    break;
-                }
-                case -1: {
-                    color = Scalar(255,255,255); //TO DELETE -> WHITE
-                    break;
-                }
-                
-                case 0: {
-                    color = Scalar(0,0,255);  //CLASS 0 -> RED
-                    break;
-                }
-
-                case 1: {
-                    color = Scalar(0,255,0); //CLASS 1 -> GREEN
-                    break;
-                }
-
-                default: {
-                    color = Scalar(255,0,0); //CLASS 2...K -> BLUE
-                }
-            }
+            cv::Scalar color = getColorByClass(c.classId);
             cv::rectangle(frameToShow, pt, Point2i(pt.x + 15, pt.y + 15), color, 6); 
         }
 
-        for(cv::Rect box : boxes){
+        for(cv::Rect box : boxes.first){
             cv::rectangle(frameToShow, Point2i(box.x, box.y), Point2i(box.x + box.width, box.y + box.height), cv::Scalar(0,0,0), 6); 
         }
        
         // Write the frame to video
         writer.write(frameToShow);
+        i++;
+    }
+
+    writer.release();
+}
+
+#include <filesystem>
+#include <regex>
+#include <vector>
+#include <string>
+#include <iostream>
+#include <algorithm>
+#include <utility>
+
+namespace fs = std::filesystem;
+
+std::vector<std::string> getVideoFrames(const std::string& folder, int videoId, int maxFrames = -1)
+{
+    std::vector<std::pair<int, std::string>> frames;
+    std::regex pattern(R"(rgb_(\d{5})_(\d+)\.jpg)");
+    std::smatch match;
+
+    for (const auto& entry : fs::directory_iterator(folder)) {
+        std::string filename = entry.path().filename().string();
+        if (std::regex_match(filename, match, pattern)) {
+            int frameIdx = std::stoi(match[1]);
+            int vidId = std::stoi(match[2]);
+            //std::cout << vidId << std::endl;
+            if (vidId == videoId && frameIdx <= maxFrames) {
+                //std::cout << filename << std::endl;
+                frames.emplace_back(frameIdx, entry.path().string());
+                if (maxFrames > 0 && frames.size() >= (size_t)maxFrames)
+                    break;  // Stop early
+            }
+        }
+    }
+
+    // Sort by frame index
+    std::sort(frames.begin(), frames.end(),
+              [](auto& a, auto& b){ return a.first < b.first; });
+    std::cout << "HERE " << frames.size() << std::endl;
+    // Extract sorted file paths
+    std::vector<std::string> paths;
+    for (auto& [idx, path] : frames)
+        paths.push_back(path);
+
+    return paths;
+}
+
+TEST(ClusteringTest, KMeansVideoTestFromDS) {
+    using namespace cv;
+
+    std::string modelPath = "../../data/crowdhuman_yolov5m-simplified.onnx";
+    std::string folder = "../../data/industry_safety_0/";
+    int videoId = 1;
+    int maxFrames = 400;
+    auto framePaths = getVideoFrames(folder, videoId, maxFrames);
+    int i = 0;
+    // Load image
+    cv::Mat frame;
+    frame = cv::imread(framePaths[i]);
+  
+    int fps = 15;
+    YOLOHelper yh = YOLOHelper(modelPath, frame.size(), cv::Size(640,640), 0.50f, 0.30f);
+    Clusterer cl = Clusterer(yh, 1e-3f, fps);
+    
+    cuda::GpuMat d_mask, d_cumulativeStatus;
+    KPExtractor kpe = KPExtractor(fps, d_mask, d_cumulativeStatus);
+    
+    Mat frameToShow, mask;
+    frame.copyTo(frameToShow);
+    int width = frame.size[1], height = frame.size[0];
+    
+
+    // Define the codec and create VideoWriter
+    VideoWriter writer("datasetTest.avi",
+                       VideoWriter::fourcc('M','J','P','G'),
+                       fps,
+                       Size(width, height));
+
+    if (!writer.isOpened()) {
+        std::cerr << "Could not open the output video file" << std::endl;
+    }
+
+    // Define the codec and create VideoWriter
+    VideoWriter maskWriter("datasetTestMask.avi",
+                       VideoWriter::fourcc('M','J','P','G'),
+                       fps,
+                       Size(width, height));
+
+    if (!maskWriter.isOpened()) {
+        std::cerr << "Could not open the output video file" << std::endl;
+    }
+
+    cuda::GpuMat d_keypoints;
+    Mat keypoints, status;
+    cv::Scalar color;
+    thrust::device_vector<Centroid> d_centroids;
+    thrust::host_vector<Centroid> h_centroids;
+    thrust::device_vector<DataPoint> d_dataPoints;
+    thrust::host_vector<DataPoint> h_dataPoints;
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boxes;
+
+    while(true){
+        if (i >= maxFrames) break;
+        frame = cv::imread(framePaths[i]);
+        frame.copyTo(frameToShow);
+        d_keypoints = kpe.getUnclusteredKeypoints(frame);
+        d_cumulativeStatus.download(status);
+        d_keypoints.download(keypoints);
+
+        if(true){//i % fps == 0) {
+            cl.clusterize(frame, d_keypoints);
+            boxes = cl.getBoxes();
+        } else {
+            cv::cuda::GpuMat d_frame;
+            d_frame.upload(frame);
+            cl.inheritClusters(d_cumulativeStatus, d_keypoints, d_frame);
+        }
+        h_centroids = cl.getCentroids();
+        h_dataPoints = cl.getDatapoints();
+
+        // Draw corners
+        for (int j = 0; j < keypoints.cols; j++) {
+            cv::Point2f pt = keypoints.at<Point2f>(0,j);
+            DataPoint dp = h_dataPoints[j];
+            
+            cv::Scalar color = getColorByClass(dp.classId);
+            cv::circle(frameToShow, pt, 2, color, -1);
+        }
+
+        //draw centroids
+        for (Centroid c : h_centroids) {
+            cv::Point2i pt = Point2i(c.x * frame.size().width, c.y * frame.size().height);
+            cv::Scalar color = getColorByClass(c.classId);
+            cv::rectangle(frameToShow, pt, Point2i(pt.x + 2, pt.y + 2), color, 1); 
+        }
+
+        for(cv::Rect box : boxes.first){
+            cv::rectangle(frameToShow, Point2i(box.x, box.y), Point2i(box.x + box.width, box.y + box.height), cv::Scalar(0,0,0), 1); 
+        }
+
+        for(cv::Rect box : boxes.second){
+            cv::rectangle(frameToShow, Point2i(box.x, box.y), Point2i(box.x + box.width, box.y + box.height), cv::Scalar(255,255,255), 1); 
+        }
+
+        // Write the frame to video
+        writer.write(frameToShow);
+
+        // Write mask to video
+        d_mask.download(mask);
+        cv::cvtColor(mask, mask, cv::COLOR_GRAY2BGR);
+        maskWriter.write(mask);
+
         i++;
     }
 

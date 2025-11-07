@@ -135,7 +135,9 @@ void Clusterer::clusterize(cv::Mat frame, cv::cuda::GpuMat d_unclusteredKP) {
     const int step = d_hsv.step;
 
     // 2. Prepare YOLO bounding boxes on device
-    this->boxes = this->boxFinder.getBBOfPeople(frame);
+    pair<vector<Rect>, vector<Rect>> bbs = this->boxFinder.getBBOfPeople(frame);
+    this->boxes = bbs.first;
+    this->boxesHeads = bbs.second;
     vector<cv::Rect> boundingBoxes = boxes;
     thrust::host_vector<Detection> h_dets;
     
@@ -372,6 +374,6 @@ void Clusterer::updateKeypoints(){
     );
 }
 
-std::vector<cv::Rect> Clusterer::getBoxes() {
-    return this->boxes;
+pair<std::vector<cv::Rect>, std::vector<cv::Rect>> Clusterer::getBoxes() {
+    return pair(this->boxes, this->boxesHeads);
 }
