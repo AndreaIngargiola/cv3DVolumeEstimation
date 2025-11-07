@@ -1,4 +1,7 @@
 #include <segmentation.hpp>
+#include <fstream>
+#include <filesystem>
+#include <iostream>
 
 using namespace cv;
 using namespace cv::cuda;
@@ -34,30 +37,30 @@ void KPExtractor::preprocessFrameAndBackSub() {
     this->d_keypoints.copyTo(this->d_prevKeypoints);
 
     // CPU conversion to gray and blurring version of frame to compute the mask
-    cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
+    //cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
     d_frame.upload(frame);
 
-    cv::GaussianBlur(frame, blurred, Size(5,5), 0);
+    cv::GaussianBlur(frame, blurred, Size(3,3), 0);
     d_blurred.upload(blurred);
 
     // Creation of updated mask for background subtraction
     pBackSub->apply(d_blurred, d_mask);
-
+    
+    cv::cvtColor(frame, frame, cv::COLOR_BGR2GRAY);
+    d_frame.upload(frame);
     // Remove shadows (keep only 0/255)
     cv::cuda::threshold(d_mask, d_mask, 200, 255, THRESH_BINARY);
     d_mask.download(mask);
 
     // CPU morphological filtering
-    cv::morphologyEx(mask, mask, cv::MORPH_ERODE,
-                cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(5,5)));
-                
-    cv::morphologyEx(mask, mask, cv::MORPH_OPEN,
-                    cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(3,3)));
+    //cv::morphologyEx(mask, mask, cv::MORPH_ERODE,
+    //            cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(3,3)));
 
-    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE,
-                    cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(7,7)));
+    cv::morphologyEx(mask, mask, cv::MORPH_GRADIENT,
+                    cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(5,5)));
 
-    
+    //cv::morphologyEx(mask, mask, cv::MORPH_OPEN,
+    //                cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(3,3)));
 
     // Upload back to GPU for masking
     d_mask.upload(mask);
