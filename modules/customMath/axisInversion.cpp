@@ -14,7 +14,17 @@ namespace customMath {
         return Vec2f(img_w - p[0], img_h - p[1]);
     }
 
-    void invert3dAxis(Mat& K, Mat& R, float img_w, float img_h) {
+    void flipZaxis(Mat& R) {
+        Mat D = (Mat_<double>(3,3) <<
+            1.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, -1.0f
+        );
+
+        R = R * D; //flip Z (positive values of Z are out of the chessboard)
+    }
+
+    void flipImageOrigin(Mat& K, float img_w, float img_h) {
         
         //Transform matrix to flip axes
         Mat T = (Mat_<double>(3,3) <<
@@ -24,13 +34,5 @@ namespace customMath {
         );
         
         K = T * K;
-
-        Mat D = (Mat_<double>(3,3) <<
-            1.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, -1.0f
-        );
-
-        R = R * D; //flip Z (positive values of Z are out of the chessboard)
     }
 }

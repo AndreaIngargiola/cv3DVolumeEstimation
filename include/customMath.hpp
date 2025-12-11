@@ -14,9 +14,11 @@ namespace customMath {
 
     Vec2f invert2dAxisF(Vec2f p, int img_w, int img_h);
 
-    void invert3dAxis(Mat& K, Mat& R, float img_w, float img_h);
+    void flipZaxis(Mat& R);
 
-    Point2d projectOnImgFromPlane(Point3d P, Mat H);
+    void flipImageOrigin(Mat& K, float img_w, float img_h);
 
-    Point2d projectOnImgFrom3D(Point3d P, Mat K);
+    Point2d projectOnImgFromPlane(Point2d X, Mat H);
+
+    Point2d projectOnImgFrom3D(Point3d X, Mat P);
 }
