@@ -8,21 +8,30 @@ class Calibrator {
 private:
     const std::string valuesPath;
     const std::string samplesPath;
+    std::string poseImgPath;
     const cv::Size patternShape;
     const int patternType;
 
-    cv::Mat K;
+    const int cameraId;
+
+    cv::Mat K;          //intrinsics matrix
+    cv::Mat R;          //rotation matrix
+    cv::Mat t;          //translation vector
     cv::Mat distCoeffs;
     float reprojectionError;
 
 
 public:
     Calibrator( const std::string& valuesPath,
-                const std::string& samplesPath,
                 const cv::Size& patternShape,
-                const int patternType);
+                const int patternType,
+                const int cameraId,
+                const std::string& samplesPath = "",
+                const std::string& poseImgPath = "");
     
     cv::Mat getK();
+    cv::Mat getR();
+    cv::Mat gett();
     cv::Mat getDistCoeffs();
     float getReprojectionError();
     cv::Size getPatternShape();
@@ -43,25 +52,21 @@ private:
     cv::Mat K;          //intrinsics matrix
     cv::Mat R;          //rotation matrix
     cv::Mat t;          //translation vector
-    cv::Vec3d v;        //vanishing line for Z axis
-    cv::Vec3d l;        //vanishing line for X and Y axis
-    cv::Vec3d base;     //homogeneous pixel coordinates of the point laying on Z = 0
-    const int zSizeInCm;
+    cv::Point3d base;     //homogeneous pixel coordinates of the point laying on Z = 0
+    
+    const float zSizeInCm;
+    const int calibrationScaleFactor;
     std::unordered_map<int, cv::Mat> homographies;
 
 public:
-    Homographer(Calibrator cal,
-                const int zSizeInCm,
-                const std::string& poseImgPath);
+    Homographer(const cv::Mat K, const cv::Mat R, const cv::Mat t,
+                const float zSizeInCm, const int calibrationScaleFactor, 
+                const cv::Vec3i baseOn3d = cv::Vec3i(0,0,0));
 
-    void strikeThePose(const std::string& poseImgPath, Calibrator cal);
     int computeHomographies(const int deltaZ, const int maxHeightInCm);
-
     cv::Mat getGoundPlane();
     std::unordered_map<int, cv::Mat> getHomographies();
     cv::Mat getPlane(const int z);
     cv::Mat getP();
-
-private:
-    void computeHomographyForPlaneZ(const double z, cv::Vec3d top);
+    void computeHomographyForPlaneZ(const double z);
 };
