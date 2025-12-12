@@ -7,6 +7,25 @@
 #include <opencv2/core.hpp>
 #include <opencv2/cudaoptflow.hpp>
 
+class PreProcesser {
+    private:
+    cv::Mat h_frame;
+    cv::Mat h_prevFrame;
+    cv::cuda::GpuMat d_mask;
+    
+    // CUDA background subtractor (MOG2)
+    const cv::Ptr<cv::cuda::BackgroundSubtractorMOG2> pBackSub =
+        cv::cuda::createBackgroundSubtractorMOG2(150, 20.0, true);
+
+    public:
+    PreProcesser(const cv::cuda::GpuMat& d_mask);
+    void preprocessFrame(cv::Mat& src, cv::Mat& dst);
+    cv::cuda::GpuMat getMask();
+
+    private:
+    float normalizeBrightness();
+};
+
 
 class KPExtractor {
     private:
@@ -17,12 +36,11 @@ class KPExtractor {
     cv::Mat frame; 
     cv::cuda::GpuMat d_frame;
     cv::cuda::GpuMat d_prevFrame;
+
     cv::cuda::GpuMat& d_mask;
     cv::cuda::GpuMat& d_cumulativeStatus;
 
-    // CUDA background subtractor (MOG2)
-    const cv::Ptr<cv::cuda::BackgroundSubtractorMOG2> pBackSub =
-        cv::cuda::createBackgroundSubtractorMOG2(150, 20.0, true);
+    PreProcesser preProc;
 
     // CUDA goodFeaturesToTrack
     const cv::Ptr<cv::cuda::CornersDetector> kpDetector =
@@ -44,7 +62,6 @@ class KPExtractor {
     cv::cuda::GpuMat getUnclusteredKeypoints(cv::Mat& frame);
 
     private:
-    void preprocessFrameAndBackSub();
     void findNewKeypoints();
     void trackKeypoints();
 };

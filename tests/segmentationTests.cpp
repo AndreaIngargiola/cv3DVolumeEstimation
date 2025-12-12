@@ -106,7 +106,19 @@ TEST(SegmentationTest, KPExtractor_backsub) {
     Mat frameToShow;
     int i = 0;
     while(true){
-        if (!cap.read(frame) || frame.empty() || i >= 750) break;
+        if (!cap.read(frame) || frame.empty() || i >= 800) break;
+        if(i<300){
+            i++;
+            continue;
+        } 
+        if(i % 20 == 0) {
+            cv::Mat f;
+            double gain = 1.5; // >1 = brighter, <1 = darker
+            frame.convertTo(f, CV_32F);
+            f = f * gain;
+            f.convertTo(frame, CV_8U, 1.0);
+        }
+       
         kpex.getUnclusteredKeypoints(frame);
 
         // Get the foreground mask and write it to video

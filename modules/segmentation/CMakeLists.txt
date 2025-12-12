@@ -1,5 +1,5 @@
 add_library(segmentation_module 
-    keypointsExtraction.cpp
+    keypointsExtraction.cu
 )
 
 target_include_directories(segmentation_module PUBLIC
