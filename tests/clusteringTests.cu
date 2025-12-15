@@ -295,8 +295,9 @@ std::vector<std::string> getVideoFrames(const std::string& folder, int videoId, 
     return paths;
 }
 
-TEST(ClusteringTest, KMeansVideoTestFromDS) {
+TEST(ClusteringTest, EMVideoTestFromDS) {
     using namespace cv;
+    using namespace std;
 
     std::string modelPath = "../../data/crowdhuman_yolov5m-simplified.onnx";
     std::string folder = "../../data/industry_safety_0/";
@@ -310,7 +311,131 @@ TEST(ClusteringTest, KMeansVideoTestFromDS) {
   
     int fps = 15;
     YOLOHelper yh = YOLOHelper(modelPath, frame.size(), cv::Size(640,640), 0.50f, 0.30f);
-    Clusterer cl = Clusterer(yh, 1e-3f, fps);
+
+    std::string calPath = "../../data/calibrations_dataset/industry_safety/calibrations.json";
+    Mat img = imread("../../data/industry_safety_0/rgb_00000_1.jpg");
+
+    // Define Calibrator and Homographer (tests subjects)
+    Calibrator c(calPath, cv::Size(9,6), 1, 1);
+    Mat K = c.getK();
+    customMath::flipImageOrigin(K, img.size().width, img.size().height);
+    Homographer hom(K, c.getR(), c.gett(), 0.1, 20);
+
+    Mat H = hom.getGoundPlane();
+    Mat P = hom.getP();
+
+    int zHalfPerson = 900;
+    hom.computeHomographyForPlaneZ(zHalfPerson);
+    cv::Mat halfPersonMat = hom.getPlane(zHalfPerson);
+
+    EMClusterer cl = EMClusterer(yh, halfPersonMat, zHalfPerson, P);
+    
+    cuda::GpuMat d_mask, d_cumulativeStatus;
+    KPExtractor kpe = KPExtractor(fps, d_mask, d_cumulativeStatus);
+    
+    Mat frameToShow, mask;
+    frame.copyTo(frameToShow);
+    int width = frame.size[1], height = frame.size[0];
+    
+
+    // Define the codec and create VideoWriter
+    VideoWriter writer("clusteringTest/datasetTest.avi",
+                       VideoWriter::fourcc('M','J','P','G'),
+                       fps,
+                       Size(width, height));
+
+    if (!writer.isOpened()) {
+        std::cerr << "Could not open the output video file" << std::endl;
+    }
+
+    // Define the codec and create VideoWriter
+    VideoWriter maskWriter("clusteringTest/datasetTestMask.avi",
+                       VideoWriter::fourcc('M','J','P','G'),
+                       fps,
+                       Size(width, height));
+
+    if (!maskWriter.isOpened()) {
+        std::cerr << "Could not open the output video file" << std::endl;
+    }
+
+    cuda::GpuMat d_keypoints;
+    Mat keypoints, status;
+    cv::Scalar color;
+    thrust::device_vector<Centroid> d_centroids;
+    thrust::host_vector<Centroid> h_centroids;
+    thrust::device_vector<DataPoint> d_dataPoints;
+    thrust::host_vector<DataPoint> h_dataPoints;
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boxes;
+    thrust::host_vector<Cluster> h_clusters;
+
+    while(true){
+        if (i >= maxFrames) break;
+        if(i < 300){
+            i++;
+            continue;
+        }
+        frame = cv::imread(framePaths[i]);
+        frame.copyTo(frameToShow);
+        d_keypoints = kpe.getUnclusteredKeypoints(frame);
+        d_cumulativeStatus.download(status);
+        d_keypoints.download(keypoints);
+
+        if(i % fps == 0 && !d_keypoints.empty()) {
+            h_clusters = cl.clusterize(d_keypoints, frame);
+        }
+        cv::cuda::GpuMat d_frame;
+        d_frame.upload(frame);
+        
+        
+        // Draw corners
+        for (int j = 0; j < keypoints.cols; j++) {
+            cv::Point2f pt = keypoints.at<Point2f>(0,j);
+            cv::circle(frameToShow, pt, 2, cv::Scalar(255,0,0), -1);
+        }
+
+        // draw ellipses
+        for(Cluster c: h_clusters){
+            cv::ellipse(
+                frameToShow,
+                cv::Point(frame.size().width - c.mu.x, frame.size().height - c.mu.y),
+                cv::Size(c.ew, c.eh),
+                0.0,        // no rotation
+                0.0,
+                360.0,
+                cv::Scalar(161, 0, 244),  // fuxia
+                2
+            );
+        }
+        // Write the frame to video
+        writer.write(frameToShow);
+
+        // Write mask to video
+        /*d_mask.download(mask);
+        cv::cvtColor(mask, mask, cv::COLOR_GRAY2BGR);
+        maskWriter.write(mask);*/
+
+        i++;
+    }
+    writer.release();
+}
+
+TEST(ClusteringTest, KMeansVideoTestFromDS) {
+    using namespace cv;
+
+    std::string modelPath = "../../data/crowdhuman_yolov5m-simplified.onnx";
+    std::string folder = "../../data/industry_safety_0/";
+    int videoId = 1;
+    int maxFrames = 400;
+    auto framePaths = getVideoFrames(folder, videoId, maxFrames);
+    int i = 0;
+
+    // Load image
+    cv::Mat frame;
+    frame = cv::imread(framePaths[i]);
+  
+    //int fps = 15;
+    YOLOHelper yh = YOLOHelper(modelPath, frame.size(), cv::Size(640,640), 0.50f, 0.30f);
+    /*EMClusterer em = EMClusterer(yh, )
     
     cuda::GpuMat d_mask, d_cumulativeStatus;
     KPExtractor kpe = KPExtractor(fps, d_mask, d_cumulativeStatus);
@@ -351,6 +476,11 @@ TEST(ClusteringTest, KMeansVideoTestFromDS) {
 
     while(true){
         if (i >= maxFrames) break;
+        if(i < 300){
+            i++;
+            continue;
+        }
+        std::cout<< "i: " << i << std::endl;
         frame = cv::imread(framePaths[i]);
         frame.copyTo(frameToShow);
         d_keypoints = kpe.getUnclusteredKeypoints(frame);
@@ -403,5 +533,6 @@ TEST(ClusteringTest, KMeansVideoTestFromDS) {
         i++;
     }
 
-    writer.release();
+    writer.release();*/
 }
+    
