@@ -212,6 +212,9 @@ void PreProcesser::preprocessFrame(Mat& src, Mat& dst){
     cv::morphologyEx(mask, mask, cv::MORPH_CLOSE,
                    cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(3,3)));
 
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE,
+                    cv::getStructuringElement(cv::MORPH_RECT, Size(3,5)));
+
     // Upload back to GPU for masking
     this->d_mask.upload(mask);
 

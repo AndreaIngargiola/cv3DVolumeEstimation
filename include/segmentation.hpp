@@ -15,7 +15,7 @@ class PreProcesser {
     
     // CUDA background subtractor (MOG2)
     const cv::Ptr<cv::cuda::BackgroundSubtractorMOG2> pBackSub =
-        cv::cuda::createBackgroundSubtractorMOG2(150, 20.0, true);
+        cv::cuda::createBackgroundSubtractorMOG2(100, 20.0, true);
 
     public:
     PreProcesser(const cv::cuda::GpuMat& d_mask);
