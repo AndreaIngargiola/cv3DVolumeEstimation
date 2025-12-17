@@ -97,7 +97,8 @@ class EMClusterer{
     YOLOHelper boxFinder;
     int k;
     int maxIter = 10;
-    thrust::host_vector<cv::Rect> boundingBoxes;
+    //thrust::host_vector<cv::Rect> boundingBoxes;
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boundingBoxes;
     thrust::host_vector<Centroid> ellipses;
     cv::cuda::GpuMat kp;
     std::vector<cv::Point2f> mu;            // cluster centers

@@ -4,6 +4,7 @@
 #include <opencv2/cudaimgproc.hpp>
 #include <opencv2/cudaarithm.hpp>
 #include <opencv2/cudawarping.hpp>
+#include <opencv2/dnn.hpp>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 #include <thrust/remove.h>
@@ -25,6 +26,22 @@ EMClusterer::EMClusterer(YOLOHelper yh, Mat halfPersonPlane, int halfPersonZ, Ma
     halfPersonZ(halfPersonZ),
     P(P) {};
 
+
+cv::Rect scaleRect(const cv::Rect& r, float s)
+{
+    // center coordinates
+    float cx = r.x + 0.5f * r.width;
+    float cy = r.y + 0.5f * r.height;
+
+    int newW = static_cast<int>(r.width  * s);
+    int newH = static_cast<int>(r.height * s);
+
+    int newX = static_cast<int>(cx - 0.5f * newW);
+    int newY = static_cast<int>(cy - 0.5f * newH);
+
+    return cv::Rect(newX, newY, newW, newH);
+}
+
 thrust::host_vector<Cluster> EMClusterer::clusterize(GpuMat keypoints, Mat frame) {
     this->ew.clear();
     this->eh.clear();
@@ -37,8 +54,17 @@ thrust::host_vector<Cluster> EMClusterer::clusterize(GpuMat keypoints, Mat frame
     this->img_w = frame.size().width;
     this->img_h = frame.size().height;
     
-    auto detections = this->boxFinder.getBBOfPeople(frame).first;
-    this->k = detections.size() * 2;
+    this->boundingBoxes = this->boxFinder.getBBOfPeople(frame);
+    
+    for(int i = 0; i < boundingBoxes.first.size(); i++ ){
+        this->boundingBoxes.first[i] = scaleRect(this->boundingBoxes.first[i], 1.25f);
+    }
+
+    for(int i = 0; i < boundingBoxes.second.size(); i++ ){
+        this->boundingBoxes.second[i] = scaleRect(this->boundingBoxes.second[i], 1.25f);
+    }
+    int numDetections = this->boundingBoxes.first.size();
+    this->k = numDetections * 2;
     cout << "k = " << this->k << endl;
     keypoints.copyTo(this->kp);
 
@@ -49,13 +75,9 @@ thrust::host_vector<Cluster> EMClusterer::clusterize(GpuMat keypoints, Mat frame
 
     // responsibilities r[n][k]
     std::vector<std::vector<float>> r(N, std::vector<float>(K));
-    cout << "Mu before clustering " << this->mu << endl;
     for(int i = 0; i < this->maxIter; ++i){
         this->oldMu = this->mu;
-
-        /*cout << "pi(" << i << "): ";
-        for(auto p : pi) cout << " " << p;
-        cout << endl; */
+        
         this->EStep(r, N, K);
         this->MStep(r, N, K);
 
@@ -76,13 +98,39 @@ thrust::host_vector<Cluster> EMClusterer::clusterize(GpuMat keypoints, Mat frame
         if (converged) break;   // EM converged early
     }
 
+    vector<Rect> boxes;
+
+    for (int i = 0; i < this->k; i++) {
+
+        int x = round((img_w - mu[i].x) - ew[i]);
+        int y = round((img_h - mu[i].y) - eh[i]);
+        int w = round(2.0 * ew[i]);
+        int h = round(2.0 * eh[i]);
+
+        boxes.emplace_back(x, y, w, h);
+    }
+
+    // NMS parameters
+    float scoreThreshold = 0.05f;   // keep all, suppress only by IoU
+    float nmsThreshold   = 0.3f;   // paper-like value
+
+    std::vector<int> keptIndices;
+
+    cv::dnn::NMSBoxes(
+        boxes,
+        this->pi,
+        scoreThreshold,
+        nmsThreshold,
+        keptIndices
+    );
+
     thrust::host_vector<Cluster> res;
-    for(int i = 0; i < this->mu.size(); ++i){
+    for(int idx : keptIndices){
         Cluster cl;
-        cl.eh = this->eh[i];
-        cl.ew = this->ew[i];
-        cl.mu = this->mu[i];
-        cl.pi = this->pi[i];
+        cl.eh = this->eh[idx];
+        cl.ew = this->ew[idx];
+        cl.mu = this->mu[idx];
+        cl.pi = this->pi[idx];
 
         std::cout << " eh: "<< cl.eh << " ew: "<< cl.ew << " mu: "<< cl.mu << " pi: "<< cl.pi << std::endl;
         res.push_back(cl);
@@ -91,26 +139,46 @@ thrust::host_vector<Cluster> EMClusterer::clusterize(GpuMat keypoints, Mat frame
     return res;
 }
 
-
 void EMClusterer::initializeGaussians(){
-    // ---------------------------------------------------------------
+    
     // 1. Download keypoints from GPU
-    // ---------------------------------------------------------------
+    
     cv::Mat h_kpts;
     this->kp.download(h_kpts);
     int N = h_kpts.cols;
     cout << "N: " << N << endl;
-    this->pts.resize(N);
+    int goodKPCounter = 0;
+
+    // 1.5 Filter out non-person keypoints
     for (int i = 0; i < N; i++) {
         cv::Point2f pt = h_kpts.at<Point2f>(0,i);
-        pts[i] = Point2f(this->img_w - pt.x, this->img_h - pt.y);
+        bool added = false;
+        for (Rect r : this->boundingBoxes.first) {
+            if(r.contains(pt)) {    // Add only keypoints that are contained in a bounding box
+                pts.push_back(Point2f(this->img_w - pt.x, this->img_h - pt.y));
+                goodKPCounter++;
+                added = true;
+                break;
+            }
+        }
+
+        if(!added) {
+            for (Rect r : this->boundingBoxes.second) {
+                if(r.contains(pt)) {
+                    pts.push_back(Point2f(this->img_w - pt.x, this->img_h - pt.y));
+                    goodKPCounter++;
+                    break;
+                }
+            }
+        }
     }
 
-    // ---------------------------------------------------------------
+    N = goodKPCounter;
+
     // 2. Compute density of each keypoint (number of neighbors in R)
     //    As in the paper: radius R ≈ 8 px. (Fig. 5, Sec. 3.2)
-    // ---------------------------------------------------------------
-    float R = 8.0f;
+    
+    float R = 4.0f;
     float R2 = R * R;
 
     std::vector<int> density(N, 0);
@@ -132,9 +200,8 @@ void EMClusterer::initializeGaussians(){
         density[i] = count;
     }
 
-    // ---------------------------------------------------------------
     // 3. Sort points by density (descending)
-    // ---------------------------------------------------------------
+    
     std::vector<int> idx(N);
     for (int i = 0; i < N; ++i) idx[i] = i;
 
@@ -142,21 +209,25 @@ void EMClusterer::initializeGaussians(){
         return density[a] > density[b];
     });
 
-    // ---------------------------------------------------------------
     // 4. Select initial cluster centers
     //    – pick highest-density points
     //    – enforce spacing ≥ 8 px (same R)
     //    – stop when K *2 centers found
-    // ---------------------------------------------------------------
+    
     this->mu.clear();
     this->mu.reserve(this->k);
 
+    Mat inverseHom = this->halfPersonPlane.inv();
+
+    //Rect halfPersonPlaneLimits(Point2i(-84000, -59200), Point2i(57200, 63600));
+    Rect halfPersonPlaneLimits(Point2i(-4200, -2960), Point2i(2860, 3180)); 
     for (int t = 0; t < N && (int)this->mu.size() < this->k; ++t) {
 
         int id = idx[t];
         float px = pts[id].x;
         float py = pts[id].y;
 
+        if(!halfPersonPlaneLimits.contains(customMath::projectOnImgFromPlane(Point2d(px, py), inverseHom))) continue;
         bool farEnough = true;
 
         // maintain minimum spacing like the paper (≈ 8px)
@@ -174,20 +245,23 @@ void EMClusterer::initializeGaussians(){
         }
     }
 
-    Mat inverseHom = this->halfPersonPlane.inv();
+    this->k = this->mu.size();
+
+    
     float personAspectRatio = 0.33f;
     float priorInitialValue = 1.f / this->k;
     
     for(auto centroid: this->mu){
         Point2d centroidOnPlane = customMath::projectOnImgFromPlane(Point2d(centroid.x, centroid.y), inverseHom);
+        cout << "Centroid at " << centroidOnPlane << "is inside square: " << halfPersonPlaneLimits.contains(Point2i(centroidOnPlane.x, centroidOnPlane.y)) << endl; 
         Point3d centroidOn3d = Point3d(centroidOnPlane.x, centroidOnPlane.y, this->halfPersonZ);
-        cout << "centroidOn3d " << centroidOn3d << endl;
-        Point3d topOn3d = centroidOn3d + Point3d(0,0,900);
         
+        Point3d topOn3d = centroidOn3d + Point3d(0,0,900);
         Point2d topOnImg = customMath::projectOnImgFrom3D(topOn3d, this->P);
-         cout << "topOnImg " << centroidOn3d << endl;
+        
         float eh = topOnImg.y - centroid.y;
         float ew = eh * personAspectRatio;
+        
         this->eh.push_back(eh);
         this->ew.push_back(ew);
         this->pi.push_back(priorInitialValue);
@@ -204,24 +278,18 @@ void EMClusterer::initializeGaussians(){
 
         for (int k = 0; k < K; ++k)
         {
-            // -----------------------------------------------------------------
             // Compute ellipse area A_e  (= π * eh * ew)
-            // -----------------------------------------------------------------
             float Ae = CV_PI * ew[k] * eh[k];
 
-            // -----------------------------------------------------------------
             // Compute Σ from c * ellipse axes:
             //      σx = c * ew[k]
             //      σy = c * eh[k]
-            // -----------------------------------------------------------------
             float sx = c * ew[k];
             float sy = c * eh[k];
 
             float invNorm = 1.0f / (2.0f * CV_PI * sx * sy);
 
-            // -----------------------------------------------------------------
             // Check if point is inside ellipse
-            // -----------------------------------------------------------------
             float dx = pts[n].x - mu[k].x;
             float dy = pts[n].y - mu[k].y;
 
@@ -229,13 +297,10 @@ void EMClusterer::initializeGaussians(){
                 (dx * dx) / (ew[k] * ew[k]) +
                 (dy * dy) / (eh[k] * eh[k]) <= 1.0f;
 
-            // -----------------------------------------------------------------
             //  CASE 1: inside ellipse → uniform: m / Ae
             //  CASE 2: outside ellipse → full Gaussian
             //
-            //  (EXACTLY as written in Equation (8))
-            // -----------------------------------------------------------------
-
+            //  (EXACTLY as written in Equation (8)
             float h;
             if (inside)
             {

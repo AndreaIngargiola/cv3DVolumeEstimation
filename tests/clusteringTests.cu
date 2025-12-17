@@ -302,9 +302,10 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
     std::string modelPath = "../../data/crowdhuman_yolov5m-simplified.onnx";
     std::string folder = "../../data/industry_safety_0/";
     int videoId = 1;
-    int maxFrames = 400;
+    int maxFrames = 500;
     auto framePaths = getVideoFrames(folder, videoId, maxFrames);
     int i = 0;
+
     // Load image
     cv::Mat frame;
     frame = cv::imread(framePaths[i]);
@@ -315,7 +316,7 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
     std::string calPath = "../../data/calibrations_dataset/industry_safety/calibrations.json";
     Mat img = imread("../../data/industry_safety_0/rgb_00000_1.jpg");
 
-    // Define Calibrator and Homographer (tests subjects)
+    // Define Calibrator and Homographer
     Calibrator c(calPath, cv::Size(9,6), 1, 1);
     Mat K = c.getK();
     customMath::flipImageOrigin(K, img.size().width, img.size().height);
@@ -371,6 +372,8 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
     while(true){
         if (i >= maxFrames) break;
         if(i < 300){
+            frame = cv::imread(framePaths[i]);
+            d_keypoints = kpe.getUnclusteredKeypoints(frame);
             i++;
             continue;
         }
@@ -410,9 +413,9 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
         writer.write(frameToShow);
 
         // Write mask to video
-        /*d_mask.download(mask);
+        d_mask.download(mask);
         cv::cvtColor(mask, mask, cv::COLOR_GRAY2BGR);
-        maskWriter.write(mask);*/
+        maskWriter.write(mask);
 
         i++;
     }
