@@ -365,9 +365,10 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
     thrust::device_vector<Centroid> d_centroids;
     thrust::host_vector<Centroid> h_centroids;
     thrust::device_vector<DataPoint> d_dataPoints;
-    thrust::host_vector<DataPoint> h_dataPoints;
+    std::vector<DataPoint> h_dataPoints;
     std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boxes;
     thrust::host_vector<Cluster> h_clusters;
+    std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> clusteringRes;
 
     while(true){
         if (i >= maxFrames) break;
@@ -384,20 +385,42 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
         d_keypoints.download(keypoints);
 
         if(i % fps == 0 && !d_keypoints.empty()) {
-            h_clusters = cl.clusterize(d_keypoints, frame);
+            clusteringRes = cl.clusterize(d_keypoints, frame);
+            h_clusters = clusteringRes.first;
+            h_dataPoints = clusteringRes.second;
+            cout << "datapoints: ";
+            for(auto dp : h_dataPoints) cout << dp.classId << " ";
+            cout << endl;
         }
         cv::cuda::GpuMat d_frame;
         d_frame.upload(frame);
         
+        static const std::vector<cv::Scalar> kColors = {
+            //{255,   0,   0},   // Blue
+            {0,   255,   0},   // Green
+            {0,     0, 255},   // Red
+            {255, 255,   0},   // Cyan
+            {255,   0, 255},   // Magenta
+            {0,   255, 255},   // Yellow
+            {255, 255, 255},   // White
+            {128, 128, 128}    // Gray
+        };
         
         // Draw corners
         for (int j = 0; j < keypoints.cols; j++) {
             cv::Point2f pt = keypoints.at<Point2f>(0,j);
-            cv::circle(frameToShow, pt, 2, cv::Scalar(255,0,0), -1);
+            cv::Scalar color(255,0,0);
+            if(!h_dataPoints.empty()){
+                DataPoint dp = h_dataPoints[j];
+                if(dp.classId != -2){
+                    color = dp.classId < kColors.size() ? kColors[dp.classId] : cv::Scalar(255,255,255);
+                }
+            }
+            cv::circle(frameToShow, pt, 2, color, -1);
         }
 
         // draw ellipses
-        for(Cluster c: h_clusters){
+        /*for(Cluster c: h_clusters){
             cv::ellipse(
                 frameToShow,
                 cv::Point(frame.size().width - c.mu.x, frame.size().height - c.mu.y),
@@ -406,9 +429,9 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
                 0.0,
                 360.0,
                 cv::Scalar(161, 0, 244),  // fuxia
-                2
+                1
             );
-        }
+        }*/
         // Write the frame to video
         writer.write(frameToShow);
 

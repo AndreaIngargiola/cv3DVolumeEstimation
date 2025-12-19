@@ -99,7 +99,7 @@ class EMClusterer{
     int maxIter = 10;
     //thrust::host_vector<cv::Rect> boundingBoxes;
     std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boundingBoxes;
-    thrust::host_vector<Centroid> ellipses;
+    thrust::host_vector<Cluster> ellipses;
     cv::cuda::GpuMat kp;
     std::vector<cv::Point2f> mu;            // cluster centers
     std::vector<cv::Point2f> oldMu;         // previous iteration cluster center to compute distance
@@ -111,6 +111,8 @@ class EMClusterer{
     cv::Mat halfPersonPlane;
     int halfPersonZ;
     cv::Mat P;
+
+    std::vector<DataPoint> datapoints;
     
     const float SIGMA2 = 100.0f;
     const float INV_2PI_SIGMA2 = 1.0f / (2.0f * CV_PI * SIGMA2);
@@ -124,7 +126,7 @@ class EMClusterer{
 
     public: 
     EMClusterer(YOLOHelper yh, cv::Mat halfPersonPlane, int halfPersonZ, cv::Mat P);
-    thrust::host_vector<Cluster> clusterize(cv::cuda::GpuMat keypoints, cv::Mat frame);
+    std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> clusterize(cv::cuda::GpuMat keypoints, cv::Mat frame);
     
     private:
     void initializeGaussians();
