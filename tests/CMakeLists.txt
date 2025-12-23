@@ -7,7 +7,7 @@ set(CMAKE_CUDA_ARCHITECTURES 52)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda")
 
 add_executable(runTests
-    testUtils.cpp
+    testUtils.cu
     segmentationTests.cpp
     clusteringTests.cu
 )

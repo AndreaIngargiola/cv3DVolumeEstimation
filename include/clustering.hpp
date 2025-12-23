@@ -6,6 +6,7 @@
 #include <opencv2/dnn.hpp>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
+#include <vision.hpp>
 #include <fstream>
 #include <utility> 
 
@@ -53,12 +54,7 @@ struct Centroid {
     float x, y, h, s, v;
 };
 
-struct DataPoint {
-    float features[5];
-    int classId = -1;
-    int isSupervised = 0;
-};
-
+/*
 class Clusterer {
     private:
     YOLOHelper boxFinder;
@@ -83,8 +79,7 @@ class Clusterer {
     float updateCentroids();
     void updateKeypoints();
 };
-
-
+*/
 struct Cluster {
     cv::Point2f mu;     // center
     float eh, ew;       // ellipse semi-axes (height, width)

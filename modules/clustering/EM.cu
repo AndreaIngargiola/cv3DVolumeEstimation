@@ -171,8 +171,8 @@ void EMClusterer::initializeGaussians(){
     for (int i = 0; i < N; i++) {
         cv::Point2f pt = h_kpts.at<Point2f>(0,i);
         Point2f ptInRightSystem = Point2f(this->img_w - pt.x, this->img_h - pt.y);
-        datapoints[i].features[0] = ptInRightSystem.x;
-        datapoints[i].features[1] = ptInRightSystem.y;
+        datapoints[i].x = ptInRightSystem.x;
+        datapoints[i].y = ptInRightSystem.y;
         datapoints[i].classId = -2;
 
         if(pt.x < 0 || pt.y < 0) continue; // discard dead keypoints

@@ -75,6 +75,7 @@ cv::Scalar getColorByClass(int classId) {
         }
 }
 
+/*
 TEST(ClusteringTest, KMeansTest) {
     using namespace cv;
     using namespace cv::dnn;
@@ -251,7 +252,7 @@ TEST(ClusteringTest, KMeansVideoTest) {
 
     writer.release();
 }
-
+*/
 #include <filesystem>
 #include <regex>
 #include <vector>
@@ -262,7 +263,7 @@ TEST(ClusteringTest, KMeansVideoTest) {
 
 namespace fs = std::filesystem;
 
-std::vector<std::string> getVideoFrames(const std::string& folder, int videoId, int maxFrames = -1)
+std::vector<std::string> getClusteringVideoFrames(const std::string& folder, int videoId, int maxFrames = -1)
 {
     std::vector<std::pair<int, std::string>> frames;
     std::regex pattern(R"(rgb_(\d{5})_(\d+)\.jpg)");
@@ -303,7 +304,7 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
     std::string folder = "../../data/industry_safety_0/";
     int videoId = 1;
     int maxFrames = 500;
-    auto framePaths = getVideoFrames(folder, videoId, maxFrames);
+    auto framePaths = getClusteringVideoFrames(folder, videoId, maxFrames);
     int i = 0;
 
     // Load image
@@ -444,7 +445,7 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
     }
     writer.release();
 }
-
+/*
 TEST(ClusteringTest, KMeansVideoTestFromDS) {
     using namespace cv;
 
@@ -560,5 +561,5 @@ TEST(ClusteringTest, KMeansVideoTestFromDS) {
     }
 
     writer.release();*/
-}
+//}
     

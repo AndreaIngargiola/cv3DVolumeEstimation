@@ -3,6 +3,7 @@
 #include <string>
 #include <opencv2/core.hpp>
 #include <unordered_map>
+#include <thrust/host_vector.h>
 
 class Calibrator {
 private:
@@ -69,4 +70,36 @@ public:
     cv::Mat getPlane(const int z);
     cv::Mat getP();
     void computeHomographyForPlaneZ(const double z);
+};
+
+struct Cuboid{
+    cv::Point3d origin;
+    float dx;
+    float dy;
+    float dz;
+};
+
+struct DataPoint {
+    float x, y;
+    int classId = -1;
+};
+
+
+class TridimensionalReconstructor {
+    private:
+    cv::Mat K;          //intrinsics matrix
+    cv::Mat R;          //rotation matrix
+    cv::Mat t;          //translation vector
+    Homographer hom;
+    thrust::host_vector<Cuboid> boundingBoxes;
+    std::vector<std::vector<DataPoint>> kp;
+    float zDimensionInCm;
+
+    public:
+    TridimensionalReconstructor(const cv::Mat K, const cv::Mat R, const cv::Mat t, Homographer hom, float zDimensionInCm);
+    thrust::host_vector<Cuboid> get3DBoundingBoxes(cv::Mat frame, std::vector<DataPoint> kp);
+    void computeClusterDim(std::vector<DataPoint> kp);
+
+    private:
+    void computeCluster3d(std::vector<DataPoint> kp);
 };

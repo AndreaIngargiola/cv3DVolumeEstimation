@@ -96,7 +96,6 @@ TEST(VisionTest, ParallelPlanes) {
     using namespace std;
 
     Point3f origin = {5,0,0};
-    float size = 4.0f;
     string posePath = "../../data/floor_surface/piano_pav_(1).jpg";
     Mat img = imread(posePath);
 
@@ -272,4 +271,208 @@ TEST(VisionTest, DatasetHomography) {
     for (auto e : verticalEdges) line(img, toDraw[e.first], toDraw[e.second], Scalar(255,0,0), 2); // blue
 
     imwrite("visionTest/datasetHomography.png", img);
+}
+
+#include <filesystem>
+#include <regex>
+#include <vector>
+#include <string>
+#include <iostream>
+#include <algorithm>
+#include <utility>
+
+namespace fs = std::filesystem;
+
+std::vector<std::string> getVideoFrames(const std::string& folder, int videoId, int maxFrames = -1)
+{
+    std::vector<std::pair<int, std::string>> frames;
+    std::regex pattern(R"(rgb_(\d{5})_(\d+)\.jpg)");
+    std::smatch match;
+
+    for (const auto& entry : fs::directory_iterator(folder)) {
+        std::string filename = entry.path().filename().string();
+        if (std::regex_match(filename, match, pattern)) {
+            int frameIdx = std::stoi(match[1]);
+            int vidId = std::stoi(match[2]);
+            //std::cout << vidId << std::endl;
+            if (vidId == videoId && frameIdx <= maxFrames) {
+                //std::cout << filename << std::endl;
+                frames.emplace_back(frameIdx, entry.path().string());
+                if (maxFrames > 0 && frames.size() >= (size_t)maxFrames)
+                    break;  // Stop early
+            }
+        }
+    }
+
+    // Sort by frame index
+    std::sort(frames.begin(), frames.end(),
+              [](auto& a, auto& b){ return a.first < b.first; });
+    std::cout << "HERE " << frames.size() << std::endl;
+    // Extract sorted file paths
+    std::vector<std::string> paths;
+    for (auto& [idx, path] : frames)
+        paths.push_back(path);
+
+    return paths;
+}
+
+TEST(VisionTest, HeightTest) {
+    using namespace cv;
+    using namespace std;
+
+    std::string modelPath = "../../data/crowdhuman_yolov5m-simplified.onnx";
+    std::string folder = "../../data/industry_safety_0/";
+    int videoId = 1;
+    int maxFrames = 301;
+    auto framePaths = getVideoFrames(folder, videoId, maxFrames);
+    int i = 0;
+
+    // Load image
+    cv::Mat frame;
+    frame = cv::imread(framePaths[i]);
+  
+    int fps = 15;
+    YOLOHelper yh = YOLOHelper(modelPath, frame.size(), cv::Size(640,640), 0.50f, 0.30f);
+
+    std::string calPath = "../../data/calibrations_dataset/industry_safety/calibrations.json";
+    Mat img = imread("../../data/industry_safety_0/rgb_00000_1.jpg");
+
+    // Define Calibrator and Homographer
+    Calibrator c(calPath, cv::Size(9,6), 1, 1);
+    Mat K = c.getK();
+    customMath::flipImageOrigin(K, img.size().width, img.size().height);
+    Homographer hom(K, c.getR(), c.gett(), 0.1, 20);
+    TridimensionalReconstructor rec(K, c.getR(), c.gett(), hom, 0.1f);
+    Mat H = hom.getGoundPlane();
+    Mat P = hom.getP();
+
+    int zHalfPerson = 900;
+    hom.computeHomographyForPlaneZ(zHalfPerson);
+    cv::Mat halfPersonMat = hom.getPlane(zHalfPerson);
+
+    EMClusterer cl = EMClusterer(yh, halfPersonMat, zHalfPerson, P);
+    
+    cuda::GpuMat d_mask, d_cumulativeStatus;
+    KPExtractor kpe = KPExtractor(fps, d_mask, d_cumulativeStatus);
+    
+    Mat frameToShow, mask;
+    frame.copyTo(frameToShow);
+    int width = frame.size[1], height = frame.size[0];
+    
+/*
+    // Define the codec and create VideoWriter
+    VideoWriter writer("clusteringTest/datasetTest.avi",
+                       VideoWriter::fourcc('M','J','P','G'),
+                       fps,
+                       Size(width, height));
+
+    if (!writer.isOpened()) {
+        std::cerr << "Could not open the output video file" << std::endl;
+    }
+
+    // Define the codec and create VideoWriter
+    VideoWriter maskWriter("clusteringTest/datasetTestMask.avi",
+                       VideoWriter::fourcc('M','J','P','G'),
+                       fps,
+                       Size(width, height));
+
+    if (!maskWriter.isOpened()) {
+        std::cerr << "Could not open the output video file" << std::endl;
+    }
+*/
+    cuda::GpuMat d_keypoints;
+    Mat keypoints, status;
+    cv::Scalar color;
+    thrust::device_vector<Centroid> d_centroids;
+    thrust::host_vector<Centroid> h_centroids;
+    thrust::device_vector<DataPoint> d_dataPoints;
+    std::vector<DataPoint> h_dataPoints;
+    std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boxes;
+    thrust::host_vector<Cluster> h_clusters;
+    std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> clusteringRes;
+
+    while(true){
+        if (i >= maxFrames) break;
+        if(i < 300){
+            frame = cv::imread(framePaths[i]);
+            d_keypoints = kpe.getUnclusteredKeypoints(frame);
+            i++;
+            continue;
+        }
+        frame = cv::imread(framePaths[i]);
+        frame.copyTo(frameToShow);
+        d_keypoints = kpe.getUnclusteredKeypoints(frame);
+        d_cumulativeStatus.download(status);
+        d_keypoints.download(keypoints);
+
+        if(i % fps == 0 && !d_keypoints.empty()) {
+            clusteringRes = cl.clusterize(d_keypoints, frame);
+            h_clusters = clusteringRes.first;
+            h_dataPoints = clusteringRes.second;
+        }
+        cv::cuda::GpuMat d_frame;
+        d_frame.upload(frame);
+
+        static const std::vector<cv::Scalar> kColors = {
+            //{255,   0,   0},   // Blue
+            {0,   255,   0},   // Green
+            {0,     0, 255},   // Red
+            {255, 255,   0},   // Cyan
+            {255,   0, 255},   // Magenta
+            {0,   255, 255},   // Yellow
+            {255, 255, 255},   // White
+            {128, 128, 128}    // Gray
+        };
+        std::vector<std::vector<DataPoint>> clusters(10);
+        
+        // Draw corners
+        for (int j = 0; j < keypoints.cols; j++) {
+            cv::Point2f pt = keypoints.at<Point2f>(0,j);
+            cv::Scalar color(255,0,0);
+            int classId;
+            if(!h_dataPoints.empty()){
+                DataPoint dp = h_dataPoints[j];
+                classId = dp.classId;
+                if(dp.classId != -2){
+                    clusters[classId].push_back(dp);
+                    color = dp.classId < kColors.size() ? kColors[dp.classId] : cv::Scalar(255,255,255);
+                }
+            }
+            cv::circle(frameToShow, pt, 2, color, -1);
+        }
+        int j = 0;
+        cout << "i = " << i << endl;
+        for(vector<DataPoint> cluster : clusters){
+            if(!cluster.empty()) {
+                cout << "cluster " << j << " ";
+                rec.computeClusterDim(cluster);
+            }
+            j++;
+        }
+        if(!clusters.empty()) cv::imwrite("visionTest/heightComputation.png", frameToShow);
+/*
+        // draw ellipses
+        for(Cluster c: h_clusters){
+            cv::ellipse(
+                frameToShow,
+                cv::Point(frame.size().width - c.mu.x, frame.size().height - c.mu.y),
+                cv::Size(c.ew, c.eh),
+                0.0,        // no rotation
+                0.0,
+                360.0,
+                cv::Scalar(161, 0, 244),  // fuxia
+                1
+            );
+        }
+        // Write the frame to video
+        writer.write(frameToShow);
+
+        // Write mask to video
+        d_mask.download(mask);
+        cv::cvtColor(mask, mask, cv::COLOR_GRAY2BGR);
+        maskWriter.write(mask);
+*/
+        i++;
+    }
+    //writer.release();
 }
