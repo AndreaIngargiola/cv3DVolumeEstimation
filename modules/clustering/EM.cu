@@ -41,7 +41,7 @@ cv::Rect scaleRect(const cv::Rect& r, float s)
     return cv::Rect(newX, newY, newW, newH);
 }
 
-std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clusterize(GpuMat keypoints, Mat frame) {
+std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clusterizeKeyPoints(GpuMat keypoints, Mat frame) {
     this->ew.clear();
     this->eh.clear();
     this->ellipses.clear();
@@ -96,9 +96,12 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
         }
         if (converged) break;   // EM converged early
     }
+    this->postProcessResults(r);
+    return pair(this->ellipses, this->datapoints);
+}
 
+void EMClusterer::postProcessResults(std::vector<std::vector<float>> r){
     vector<Rect> boxes;
-
     for (int i = 0; i < this->K; i++) {
 
         int x = round((img_w - mu[i].x) - ew[i]);
@@ -153,8 +156,6 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
         }
         this->datapoints[i].classId = bestClass;
     }
-    
-    return pair(this->ellipses, this->datapoints);
 }
 
 void EMClusterer::importDataPoints(vector<DataPoint> dp){

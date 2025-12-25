@@ -384,7 +384,7 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
         d_keypoints.download(keypoints);
 
         if(i % fps == 0 && !d_keypoints.empty()) {
-            clusteringRes = cl.clusterize(d_keypoints, frame);
+            clusteringRes = cl.clusterizeKeyPoints(d_keypoints, frame);
             h_clusters = clusteringRes.first;
             h_dataPoints = clusteringRes.second;
             cout << "datapoints: ";

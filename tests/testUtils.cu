@@ -394,7 +394,7 @@ TEST(VisionTest, HeightTest) {
 
         if( !d_keypoints.empty()) {
             if(i % fps == 0) {
-                clusteringRes = cl.clusterize(d_keypoints, frame);
+                clusteringRes = cl.clusterizeKeyPoints(d_keypoints, frame);
                 h_clusters = clusteringRes.first;
                 h_dataPoints = clusteringRes.second;
             }
