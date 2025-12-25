@@ -41,7 +41,7 @@ cv::Rect scaleRect(const cv::Rect& rect, float s)
     return cv::Rect(newX, newY, newW, newH);
 }
 
-std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clusterizeKeyPoints(GpuMat keypoints, Mat frame) {
+void EMClusterer::preClusteringCleanUp(){
     this->ew.clear();
     this->eh.clear();
     this->ellipses.clear();
@@ -50,10 +50,15 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
     this->pi.clear();
     this->pts.clear();
     this->r.clear();
+    this->K = -1;
+    this->N = -1;
+}
 
+
+pair<thrust::host_vector<Cluster>, vector<DataPoint>> EMClusterer::clusterizeKeyPoints(GpuMat keypoints, Mat frame) {
+    this->preClusteringCleanUp();
     this->img_w = frame.size().width;
     this->img_h = frame.size().height;
-    
     this->boundingBoxes = this->boxFinder.getBBOfPeople(frame);
     
     for(int i = 0; i < boundingBoxes.first.size(); i++ ){
@@ -63,11 +68,24 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
     for(int i = 0; i < boundingBoxes.second.size(); i++ ){
         this->boundingBoxes.second[i] = scaleRect(this->boundingBoxes.second[i], 1.25f);
     }
+
     int numDetections = this->boundingBoxes.first.size();
     this->K = numDetections * 2;
     keypoints.copyTo(this->kp);
-
     this->importKeyPoints();
+    this->runExpectationMaximization();
+    return pair(this->ellipses, this->datapoints);
+}
+
+pair<thrust::host_vector<Cluster>, vector<DataPoint>> EMClusterer::clusterizeDataPoints(vector<DataPoint> datapoints, int k) {
+    this->preClusteringCleanUp();
+    this->K = k * 2;
+    this->importDataPoints(datapoints);
+    this->runExpectationMaximization();
+    return pair(this->ellipses, this->datapoints);
+}
+
+void EMClusterer::runExpectationMaximization(){
     this->initializeGaussians();
 
     this->N = pts.size();
@@ -98,7 +116,6 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
         if (converged) break;   // EM converged early
     }
     this->postProcessResults();
-    return pair(this->ellipses, this->datapoints);
 }
 
 void EMClusterer::postProcessResults(){

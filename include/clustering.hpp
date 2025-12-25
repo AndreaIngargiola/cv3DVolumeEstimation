@@ -91,11 +91,14 @@ class EMClusterer{
     public: 
     EMClusterer(YOLOHelper yh, cv::Mat halfPersonPlane, int halfPersonZ, cv::Mat P);
     std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> clusterizeKeyPoints(cv::cuda::GpuMat keypoints, cv::Mat frame);
+    std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> clusterizeDataPoints(std::vector<DataPoint> datapoints, int k);
     
     private:
+    void preClusteringCleanUp();
     void importDataPoints(std::vector<DataPoint> dp);
     void importKeyPoints();
     void initializeGaussians();
+    void runExpectationMaximization();
     void EStep();
     void MStep();
     void postProcessResults();
