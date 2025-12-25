@@ -70,6 +70,7 @@ class EMClusterer{
     std::vector<float> eh;                  // ellipse semi-axis height
     std::vector<float> pi;                  // priors
     std::vector<cv::Point2f> pts;           // refined KPExtractor output in the correct reference frame and filtered out of non-people kp
+    std::vector<std::vector<float>> r;       // responsability matrix N x K
     int img_w, img_h;
     cv::Mat halfPersonPlane;
     int halfPersonZ;
@@ -95,7 +96,7 @@ class EMClusterer{
     void importDataPoints(std::vector<DataPoint> dp);
     void importKeyPoints();
     void initializeGaussians();
-    void EStep(std::vector<std::vector<float>>& r);
-    void MStep(std::vector<std::vector<float>>& r);
-    void postProcessResults(std::vector<std::vector<float>> r);
+    void EStep();
+    void MStep();
+    void postProcessResults();
 };

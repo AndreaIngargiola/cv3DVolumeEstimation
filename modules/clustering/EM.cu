@@ -26,14 +26,14 @@ EMClusterer::EMClusterer(YOLOHelper yh, Mat halfPersonPlane, int halfPersonZ, Ma
     P(P) {};
 
 
-cv::Rect scaleRect(const cv::Rect& r, float s)
+cv::Rect scaleRect(const cv::Rect& rect, float s)
 {
     // center coordinates
-    float cx = r.x + 0.5f * r.width;
-    float cy = r.y + 0.5f * r.height;
+    float cx = rect.x + 0.5f * rect.width;
+    float cy = rect.y + 0.5f * rect.height;
 
-    int newW = static_cast<int>(r.width  * s);
-    int newH = static_cast<int>(r.height * s);
+    int newW = static_cast<int>(rect.width  * s);
+    int newH = static_cast<int>(rect.height * s);
 
     int newX = static_cast<int>(cx - 0.5f * newW);
     int newY = static_cast<int>(cy - 0.5f * newH);
@@ -49,6 +49,7 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
     this->oldMu.clear();
     this->pi.clear();
     this->pts.clear();
+    this->r.clear();
 
     this->img_w = frame.size().width;
     this->img_h = frame.size().height;
@@ -73,12 +74,12 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
     this->K = mu.size();
 
     // responsibilities r[n][k]
-    std::vector<std::vector<float>> r(this->N, std::vector<float>(K));
+    this->r = std::vector<std::vector<float>>(this->N, std::vector<float>(K));
     for(int i = 0; i < this->maxIter; ++i){
         this->oldMu = this->mu;
         
-        this->EStep(r);
-        this->MStep(r);
+        this->EStep();
+        this->MStep();
 
         bool converged = true;
 
@@ -96,11 +97,11 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
         }
         if (converged) break;   // EM converged early
     }
-    this->postProcessResults(r);
+    this->postProcessResults();
     return pair(this->ellipses, this->datapoints);
 }
 
-void EMClusterer::postProcessResults(std::vector<std::vector<float>> r){
+void EMClusterer::postProcessResults(){
     vector<Rect> boxes;
     for (int i = 0; i < this->K; i++) {
 
@@ -144,7 +145,7 @@ void EMClusterer::postProcessResults(std::vector<std::vector<float>> r){
     int ptIdx = 0;
     for(int i = 0; i < this->datapoints.size(); i++) {
         if(this->datapoints[i].classId == -2) continue;
-        vector<float> conf = r[ptIdx];
+        vector<float> conf = this->r[ptIdx];
         ptIdx++;
         float bestScore = -1;
         int bestClass = -2;
@@ -197,8 +198,8 @@ void EMClusterer::importKeyPoints(){
         if(pt.x < 0 || pt.y < 0) continue; // discard dead keypoints
         bool added = false;
 
-        for (Rect r : this->boundingBoxes.first) {
-            if(r.contains(pt)) {    // Add only keypoints that are contained in a bounding box
+        for (Rect rect : this->boundingBoxes.first) {
+            if(rect.contains(pt)) {    // Add only keypoints that are contained in a bounding box
                 pts.push_back(ptInRightSystem);
                 datapoints[i].classId = -1;
                 goodKPCounter++;
@@ -208,8 +209,8 @@ void EMClusterer::importKeyPoints(){
         }
 
         if(!added) {
-            for (Rect r : this->boundingBoxes.second) {
-                if(r.contains(pt)) {
+            for (Rect rect : this->boundingBoxes.second) {
+                if(rect.contains(pt)) {
                     pts.push_back(ptInRightSystem);
                     datapoints[i].classId = -1;
                     goodKPCounter++;
@@ -319,7 +320,7 @@ void EMClusterer::initializeGaussians(){
     // The paper notes this is acceptable; EM will prune useless clusters.
 }
 
- void EMClusterer::EStep(std::vector<std::vector<float>>& r){
+ void EMClusterer::EStep(){
     for (int n = 0; n < this->N; ++n)
     {
         float denom = 0.0f;
@@ -362,7 +363,7 @@ void EMClusterer::initializeGaussians(){
             }
 
             float val = pi[k] * h;
-            r[n][k] = val;
+            this->r[n][k] = val;
             denom += val;
         }
 
@@ -370,19 +371,19 @@ void EMClusterer::initializeGaussians(){
         if (denom > 0)
         {
             for (int k = 0; k < K; ++k)
-                r[n][k] /= denom;
+                this->r[n][k] /= denom;
         }
     }
 }
 
- void EMClusterer::MStep(std::vector<std::vector<float>>& r){
+ void EMClusterer::MStep(){
     for (int k = 0; k < this->K; ++k)
     {
         // Nk = effective cluster population
         float Nk = 0.0f;
 
         for (int n = 0; n < this->N; ++n)
-            Nk += r[n][k];
+            Nk += this->r[n][k];
 
         // update prior
         this->pi[k] = Nk / float(this->N);
@@ -392,8 +393,8 @@ void EMClusterer::initializeGaussians(){
 
         for (int n = 0; n < this->N; ++n)
         {
-            sumx += r[n][k] * pts[n].x;
-            sumy += r[n][k] * pts[n].y;
+            sumx += this->r[n][k] * pts[n].x;
+            sumy += this->r[n][k] * pts[n].y;
         }
 
         if (Nk > 1e-6f)
