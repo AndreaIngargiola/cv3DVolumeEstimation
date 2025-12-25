@@ -1,7 +1,6 @@
 add_library(vision_module 
     calibration.cpp
     homography.cpp
-    tridimensionalReconstruction.cu
 )
 
 find_package(CUDA REQUIRED)

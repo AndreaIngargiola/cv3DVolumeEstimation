@@ -4,7 +4,7 @@
 #include <opencv2/dnn.hpp>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
-#include <vision.hpp>
+#include <clustering.hpp>
 #include <thrust/execution_policy.h>
 #include <cub/cub.cuh>
 #include <cuda_runtime.h>
@@ -198,7 +198,6 @@ void removeOutliers(vector<DataPoint>& kp) {
 }
 
 void TridimensionalReconstructor::computeClusterDim(vector<DataPoint> kp, Point3d& base, Point3d& top, float& height, float& width){
-    //removeOutliers(kp);
     thrust::host_vector<DataPoint> points = kp;
     thrust::device_vector<DataPoint> d_points = points;
     
@@ -286,8 +285,6 @@ void TridimensionalReconstructor::computeClusterDim(vector<DataPoint> kp, Point3
     height = cv::norm(Mh - M0) * this->zDimensionInCm;
     base = Point3d(M0.at<double>(0), M0.at<double>(1), M0.at<double>(2));
     top = Point3d(Mh.at<double>(0), Mh.at<double>(1), Mh.at<double>(2));
-    //cout << "height = " << height/10 << " cm" << endl;
-    //cout << "M0: " << M0 << " MH: " << Mh << endl;
 }
 
 

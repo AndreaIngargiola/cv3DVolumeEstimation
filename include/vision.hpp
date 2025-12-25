@@ -85,21 +85,3 @@ struct DataPoint {
     float x, y;
     int classId = -1;
 };
-
-
-class TridimensionalReconstructor {
-    private:
-    cv::Mat K;          //intrinsics matrix
-    cv::Mat R;          //rotation matrix
-    cv::Mat t;          //translation vector
-    thrust::host_vector<Cuboid> boundingBoxes;
-    std::vector<std::vector<DataPoint>> kp;
-    float zDimensionInCm;
-    std::unordered_map<int, cv::Mat> zPlanes;
-
-    public:
-    TridimensionalReconstructor(const cv::Mat K, const cv::Mat R, const cv::Mat t, Homographer hom, float zDimensionInCm);
-    std::vector<Cuboid> get3DBoundingBoxes(cv::Mat frame, std::vector<DataPoint> kp);
-    void computeClusterDim(std::vector<DataPoint> kp, cv::Point3d& base, cv::Point3d& top, float& height, float& width);
-    Cuboid computeCluster3d(std::vector<DataPoint> kp);
-};

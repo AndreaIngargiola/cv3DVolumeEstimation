@@ -7,6 +7,7 @@ add_library(clustering_module
     YOLOHelper.cu
     kMeans.cu
     EM.cu
+    tridimensionalReconstruction.cu
 )
 
 target_include_directories(clustering_module PUBLIC
