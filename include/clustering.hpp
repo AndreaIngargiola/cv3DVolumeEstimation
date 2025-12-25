@@ -57,7 +57,8 @@ struct Cluster {
 class EMClusterer{
     private:
     YOLOHelper boxFinder;
-    int k;
+    int N;
+    int K;
     int maxIter = 10;
     //thrust::host_vector<cv::Rect> boundingBoxes;
     std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boundingBoxes;
@@ -91,7 +92,9 @@ class EMClusterer{
     std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> clusterize(cv::cuda::GpuMat keypoints, cv::Mat frame);
     
     private:
+    void importDataPoints(std::vector<DataPoint> dp);
+    void importKeyPoints();
     void initializeGaussians();
-    void EStep(std::vector<std::vector<float>>& r, int N, int K);
-    void MStep(std::vector<std::vector<float>>& r, int N, int K);
+    void EStep(std::vector<std::vector<float>>& r);
+    void MStep(std::vector<std::vector<float>>& r);
 };

@@ -63,25 +63,26 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
         this->boundingBoxes.second[i] = scaleRect(this->boundingBoxes.second[i], 1.25f);
     }
     int numDetections = this->boundingBoxes.first.size();
-    this->k = numDetections * 2;
+    this->K = numDetections * 2;
     keypoints.copyTo(this->kp);
 
+    this->importKeyPoints();
     this->initializeGaussians();
 
-    const int N = pts.size();
-    const int K = mu.size();
+    this->N = pts.size();
+    this->K = mu.size();
 
     // responsibilities r[n][k]
-    std::vector<std::vector<float>> r(N, std::vector<float>(K));
+    std::vector<std::vector<float>> r(this->N, std::vector<float>(K));
     for(int i = 0; i < this->maxIter; ++i){
         this->oldMu = this->mu;
         
-        this->EStep(r, N, K);
-        this->MStep(r, N, K);
+        this->EStep(r);
+        this->MStep(r);
 
         bool converged = true;
 
-        for (int k = 0; k < K; ++k)
+        for (int k = 0; k < this->K; ++k)
         {
             double dx = mu[k].x - oldMu[k].x;
             double dy = mu[k].y - oldMu[k].y;
@@ -98,7 +99,7 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
 
     vector<Rect> boxes;
 
-    for (int i = 0; i < this->k; i++) {
+    for (int i = 0; i < this->K; i++) {
 
         int x = round((img_w - mu[i].x) - ew[i]);
         int y = round((img_h - mu[i].y) - eh[i]);
@@ -156,19 +157,36 @@ std::pair<thrust::host_vector<Cluster>, std::vector<DataPoint>> EMClusterer::clu
     return pair(this->ellipses, this->datapoints);
 }
 
-void EMClusterer::initializeGaussians(){
-    
+void EMClusterer::importDataPoints(vector<DataPoint> dp){
+    this->N = dp.size();
+    this->datapoints.resize(N);
+    this->pts.clear();
+
+    for(int i = 0; i < N; i++){
+        datapoints[i].x = dp[i].x;
+        datapoints[i].y = dp[i].y;
+        datapoints[i].classId = -2;
+
+        if(dp[i].x < 0 || dp[i].y < 0 || dp[i].classId == -2) continue; // discard dead dataPoints
+
+        datapoints[i].classId = -1;
+        this->pts.push_back(Point2f(datapoints[i].x, datapoints[i].y));
+    }
+    this->N = this->pts.size();
+}
+
+void EMClusterer::importKeyPoints(){
+
     // 1. Download keypoints from GPU
-    
     cv::Mat h_kpts;
     this->kp.download(h_kpts);
-    int N = h_kpts.cols;
+    this->N = h_kpts.cols;
     cout << "N: " << N << endl;
     this->datapoints.resize(N);
     int goodKPCounter = 0;
 
     // 1.5 Filter out non-person keypoints
-    for (int i = 0; i < N; i++) {
+    for (int i = 0; i < this->N; i++) {
         cv::Point2f pt = h_kpts.at<Point2f>(0,i);
         Point2f ptInRightSystem = Point2f(this->img_w - pt.x, this->img_h - pt.y);
         datapoints[i].x = ptInRightSystem.x;
@@ -200,24 +218,27 @@ void EMClusterer::initializeGaussians(){
         }
     }
 
-    N = goodKPCounter;
+    this->N = goodKPCounter;
+}
 
+void EMClusterer::initializeGaussians(){
+    
     // 2. Compute density of each keypoint (number of neighbors in R)
     //    As in the paper: radius R ≈ 8 px. (Fig. 5, Sec. 3.2)
     
     float R = 4.0f;
     float R2 = R * R;
 
-    std::vector<int> density(N, 0);
+    std::vector<int> density(this->N, 0);
 
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < this->N; ++i) {
         float xi = pts[i].x;
         float yi = pts[i].y;
 
         int count = 0;
 
         // brute-force count (paper uses exact same logic)
-        for (int j = 0; j < N; ++j) {
+        for (int j = 0; j < this->N; ++j) {
             float dx = pts[j].x - xi;
             float dy = pts[j].y - yi;
             if (dx*dx + dy*dy <= R2)
@@ -229,8 +250,8 @@ void EMClusterer::initializeGaussians(){
 
     // 3. Sort points by density (descending)
     
-    std::vector<int> idx(N);
-    for (int i = 0; i < N; ++i) idx[i] = i;
+    std::vector<int> idx(this->N);
+    for (int i = 0; i < this->N; ++i) idx[i] = i;
 
     std::sort(idx.begin(), idx.end(), [&](int a, int b){
         return density[a] > density[b];
@@ -247,7 +268,7 @@ void EMClusterer::initializeGaussians(){
 
     //Rect halfPersonPlaneLimits(Point2i(-84000, -59200), Point2i(57200, 63600));
     Rect halfPersonPlaneLimits(Point2i(-4200, -2960), Point2i(2860, 3180)); 
-    for (int t = 0; t < N && (int)this->mu.size() < this->k; ++t) {
+    for (int t = 0; t < this->N && (int)this->mu.size() < this->K; ++t) {
 
         int id = idx[t];
         float px = pts[id].x;
@@ -272,11 +293,11 @@ void EMClusterer::initializeGaussians(){
         }
     }
 
-    this->k = this->mu.size();
+    this->K = this->mu.size();
 
     
     float personAspectRatio = 0.33f;
-    float priorInitialValue = 1.f / this->k;
+    float priorInitialValue = 1.f / this->K;
     
     for(auto centroid: this->mu){
         Point2d centroidOnPlane = customMath::projectOnImgFromPlane(Point2d(centroid.x, centroid.y), inverseHom);
@@ -297,12 +318,12 @@ void EMClusterer::initializeGaussians(){
     // The paper notes this is acceptable; EM will prune useless clusters.
 }
 
- void EMClusterer::EStep(std::vector<std::vector<float>>& r, int N, int K){
-    for (int n = 0; n < N; ++n)
+ void EMClusterer::EStep(std::vector<std::vector<float>>& r){
+    for (int n = 0; n < this->N; ++n)
     {
         float denom = 0.0f;
 
-        for (int k = 0; k < K; ++k)
+        for (int k = 0; k < this->K; ++k)
         {
             // Compute ellipse area A_e  (= π * eh * ew)
             float Ae = CV_PI * ew[k] * eh[k];
@@ -353,22 +374,22 @@ void EMClusterer::initializeGaussians(){
     }
 }
 
- void EMClusterer::MStep(std::vector<std::vector<float>>& r, int N, int K){
-    for (int k = 0; k < K; ++k)
+ void EMClusterer::MStep(std::vector<std::vector<float>>& r){
+    for (int k = 0; k < this->K; ++k)
     {
         // Nk = effective cluster population
         float Nk = 0.0f;
 
-        for (int n = 0; n < N; ++n)
+        for (int n = 0; n < this->N; ++n)
             Nk += r[n][k];
 
         // update prior
-        this->pi[k] = Nk / float(N);
+        this->pi[k] = Nk / float(this->N);
 
         // update center μ_k (the only parameter that moves)
         float sumx = 0.0f, sumy = 0.0f;
 
-        for (int n = 0; n < N; ++n)
+        for (int n = 0; n < this->N; ++n)
         {
             sumx += r[n][k] * pts[n].x;
             sumy += r[n][k] * pts[n].y;
