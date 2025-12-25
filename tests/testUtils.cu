@@ -323,7 +323,7 @@ TEST(VisionTest, HeightTest) {
     std::string modelPath = "../../data/crowdhuman_yolov5m-simplified.onnx";
     std::string folder = "../../data/industry_safety_0/";
     int videoId = 1;
-    int maxFrames = 301;
+    int maxFrames = 400;
     auto framePaths = getVideoFrames(folder, videoId, maxFrames);
     int i = 0;
 
@@ -359,9 +359,8 @@ TEST(VisionTest, HeightTest) {
     frame.copyTo(frameToShow);
     int width = frame.size[1], height = frame.size[0];
     
-/*
     // Define the codec and create VideoWriter
-    VideoWriter writer("clusteringTest/datasetTest.avi",
+    VideoWriter writer("visionTest/cubesTest.avi",
                        VideoWriter::fourcc('M','J','P','G'),
                        fps,
                        Size(width, height));
@@ -370,21 +369,9 @@ TEST(VisionTest, HeightTest) {
         std::cerr << "Could not open the output video file" << std::endl;
     }
 
-    // Define the codec and create VideoWriter
-    VideoWriter maskWriter("clusteringTest/datasetTestMask.avi",
-                       VideoWriter::fourcc('M','J','P','G'),
-                       fps,
-                       Size(width, height));
-
-    if (!maskWriter.isOpened()) {
-        std::cerr << "Could not open the output video file" << std::endl;
-    }
-*/
     cuda::GpuMat d_keypoints;
     Mat keypoints, status;
     cv::Scalar color;
-    thrust::device_vector<Centroid> d_centroids;
-    thrust::host_vector<Centroid> h_centroids;
     thrust::device_vector<DataPoint> d_dataPoints;
     std::vector<DataPoint> h_dataPoints;
     std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boxes;
@@ -405,10 +392,28 @@ TEST(VisionTest, HeightTest) {
         d_cumulativeStatus.download(status);
         d_keypoints.download(keypoints);
 
-        if(i % fps == 0 && !d_keypoints.empty()) {
-            clusteringRes = cl.clusterize(d_keypoints, frame);
-            h_clusters = clusteringRes.first;
-            h_dataPoints = clusteringRes.second;
+        if( !d_keypoints.empty()) {
+            if(i % fps == 0) {
+                clusteringRes = cl.clusterize(d_keypoints, frame);
+                h_clusters = clusteringRes.first;
+                h_dataPoints = clusteringRes.second;
+            }
+            else {
+                if(!h_dataPoints.empty()){
+                    int lostDps = 0;
+                    for(int j = 0; j < keypoints.cols; j++) {
+                        Point2f newPos = keypoints.at<Point2f>(0,j);
+                        if(newPos == Point2f(-1,-1)) {
+                            h_dataPoints[j].classId = -2;
+                            lostDps ++;
+                        }
+
+                        h_dataPoints[j].x = frame.size().width - newPos.x;
+                        h_dataPoints[j].y = frame.size().height - newPos.y;
+                    }
+                    cout <<  "lost " << lostDps << " DataPoints on i = " << i << endl;
+                }
+            }
         }
         cv::cuda::GpuMat d_frame;
         d_frame.upload(frame);
@@ -423,56 +428,55 @@ TEST(VisionTest, HeightTest) {
             {255, 255, 255},   // White
             {128, 128, 128}    // Gray
         };
-        std::vector<std::vector<DataPoint>> clusters(10);
         
         // Draw corners
         for (int j = 0; j < keypoints.cols; j++) {
             cv::Point2f pt = keypoints.at<Point2f>(0,j);
             cv::Scalar color(255,0,0);
-            int classId;
             if(!h_dataPoints.empty()){
                 DataPoint dp = h_dataPoints[j];
-                classId = dp.classId;
                 if(dp.classId != -2){
-                    clusters[classId].push_back(dp);
-                    color = dp.classId < kColors.size() ? kColors[dp.classId] : cv::Scalar(255,255,255);
+                    color = kColors[dp.classId % kColors.size()];
                 }
             }
             cv::circle(frameToShow, pt, 2, color, -1);
         }
-        int j = 0;
-        cout << "i = " << i << endl;
-        for(vector<DataPoint> cluster : clusters){
-            if(!cluster.empty()) {
-                cout << "cluster " << j << " ";
-                rec.computeClusterDim(cluster);
+        
+        std::vector<Cuboid> cubes;
+        if(!h_dataPoints.empty()) cubes = rec.get3DBoundingBoxes(frame, h_dataPoints);
+        cout << "i = " << i << " cubes size = " << cubes.size() << endl;
+        for(Cuboid c : cubes) {
+            Point3d o = c.origin;
+            Point3d dx(c.dx, 0, 0);
+            Point3d dy(0, c.dy, 0);
+            Point3d dz(0,0, c.dz);
+            vector<cv::Point3d> cube = {
+                o, 
+                o + dx, 
+                o + dy + dx, 
+                o + dy,
+                o + dz, 
+                o + dx + dz, 
+                o + dy + dx + dz, 
+                o + dy + dz
+            };
+
+            vector<Point2d> cubeOnImg;
+            for(Point3d p : cube) {
+                Point2d p2d = customMath::projectOnImgFrom3D(p, P);
+                cubeOnImg.push_back(Point2d(frame.size().width - p2d.x, frame.size().height - p2d.y));
             }
-            j++;
+            cv::Scalar color = kColors[c.classId % kColors.size()];
+            for(int i = 0; i < 8; i++) {
+                if(i != 3 && i != 7) cv::line(frameToShow, cubeOnImg[i], cubeOnImg[i+1], color, 2);
+                if(i == 3 || i == 7) cv::line(frameToShow, cubeOnImg[i], cubeOnImg[i-3], color, 2);
+                if(i < 4) cv::line(frameToShow, cubeOnImg[i], cubeOnImg[i+4], color, 2);
+            }
         }
-        if(!clusters.empty()) cv::imwrite("visionTest/heightComputation.png", frameToShow);
-/*
-        // draw ellipses
-        for(Cluster c: h_clusters){
-            cv::ellipse(
-                frameToShow,
-                cv::Point(frame.size().width - c.mu.x, frame.size().height - c.mu.y),
-                cv::Size(c.ew, c.eh),
-                0.0,        // no rotation
-                0.0,
-                360.0,
-                cv::Scalar(161, 0, 244),  // fuxia
-                1
-            );
-        }
+
         // Write the frame to video
         writer.write(frameToShow);
-
-        // Write mask to video
-        d_mask.download(mask);
-        cv::cvtColor(mask, mask, cv::COLOR_GRAY2BGR);
-        maskWriter.write(mask);
-*/
         i++;
     }
-    //writer.release();
+    writer.release();
 }

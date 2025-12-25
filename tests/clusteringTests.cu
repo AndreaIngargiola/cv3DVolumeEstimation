@@ -363,8 +363,6 @@ TEST(ClusteringTest, EMVideoTestFromDS) {
     cuda::GpuMat d_keypoints;
     Mat keypoints, status;
     cv::Scalar color;
-    thrust::device_vector<Centroid> d_centroids;
-    thrust::host_vector<Centroid> h_centroids;
     thrust::device_vector<DataPoint> d_dataPoints;
     std::vector<DataPoint> h_dataPoints;
     std::pair<std::vector<cv::Rect>, std::vector<cv::Rect>> boxes;
